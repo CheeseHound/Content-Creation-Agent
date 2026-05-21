@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
     "anthropic>=0.25.0",
     "openai>=1.30.0",
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +40,7 @@ Repository = "https://github.com/affaan-m/everything-claude-code"
 
 [project.scripts]
 llm-select = "llm.cli.selector:main"
+content-ops-agent = "llm.content_ops.cli:main"
 
 [build-system]
 requires = ["hatchling"]
