@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:ecc:schemas:content_ops.render_job.v1",
+  "title": "Content Ops Render Job Queue Payload v1",
+  "description": "Stable worker queue payload for shortform content operations render jobs. Payloads contain storage keys and render metadata only; credentials and service secrets are intentionally excluded.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "workspace_id",
+    "project_id",
+    "user_id",
+    "source_asset_id",
+    "subscription_tier",
+    "storage",
+    "render"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "content_ops.render_job.v1"
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "user_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_asset_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subscription_tier": {
+      "type": "string",
+      "enum": [
+        "free",
+        "creator",
+        "studio"
+      ]
+    },
+    "storage": {
+      "type": "object",
+      "required": [
+        "source_key",
+        "audio_key",
+        "transcript_key",
+        "render_output_prefix"
+      ],
+      "properties": {
+        "source_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audio_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transcript_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "render_output_prefix": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "render": {
+      "type": "object",
+      "required": [
+        "brand_name",
+        "audience",
+        "clip_count",
+        "platforms",
+        "estimated_minutes"
+      ],
+      "properties": {
+        "brand_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audience": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clip_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        },
+        "platforms": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "estimated_minutes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

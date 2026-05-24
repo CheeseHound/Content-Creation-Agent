@@ -1,0 +1,7 @@
+interface:
+  display_name: "Source Command Feature Development"
+  short_description: "Scaffold for migrated feature workflows"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $source-command-feature-development when continuing the migrated feature-development workflow."
+policy:
+  allow_implicit_invocation: true

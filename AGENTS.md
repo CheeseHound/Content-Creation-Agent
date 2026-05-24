@@ -120,6 +120,16 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
    - If there is no obvious project doc location, ask before creating a new top-level file
 5. **Commit** — Conventional commits format, comprehensive PR summaries
 
+## Dev Log Handoff Protocol
+
+- `DEVLOGS.md` is the standing continuity protocol for new chats and handoff prompts.
+- `dev-log/` is the durable handoff folder for next-chat prompts and session continuation notes.
+- When the user asks for a full prompt for the next chat, first inspect the latest files in `dev-log/`, then summarize everything the next chat must know, inspect, or continue.
+- Save that next-chat prompt or handoff summary into `dev-log/` using a dated Markdown filename.
+- Update `ROADMAP.md` in the same pass so completed work, blockers, priority changes, and the recommended next step reflect the current session.
+- At the beginning of any task that depends on prior session context, check the latest `dev-log/` entries before planning or editing.
+- Keep dev logs concise, factual, and implementation-facing. Include changed files, unresolved blockers, verification status, and the recommended next action.
+
 ## Workflow Surface Policy
 
 - `skills/` is the canonical workflow surface.

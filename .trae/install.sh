@@ -157,6 +157,7 @@ do_install() {
 
             while IFS= read -r source_file; do
                 relative_path="${source_file#$d}"
+                relative_path="${relative_path#/}"
                 target_path="$target_skill_dir/$relative_path"
 
                 mkdir -p "$(dirname "$target_path")"

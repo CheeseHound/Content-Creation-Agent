@@ -1,0 +1,7 @@
+interface:
+  display_name: "Source Command Add Language Rules"
+  short_description: "Scaffold for migrated language-rule workflows"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $source-command-add-language-rules when continuing the migrated add-language-rules workflow."
+policy:
+  allow_implicit_invocation: true

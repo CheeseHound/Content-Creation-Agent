@@ -19,6 +19,12 @@ function runTest(name, fn) {
   }
 }
 
+function parseNpmPackJson(stdout) {
+  const jsonStart = stdout.indexOf("[")
+  assert.notStrictEqual(jsonStart, -1, "npm pack output should contain a JSON array")
+  return JSON.parse(stdout.slice(jsonStart))
+}
+
 function normalizePublishPath(value) {
   return String(value).replace(/\\/g, "/").replace(/\/$/, "")
 }
@@ -122,7 +128,7 @@ function main() {
       })
       assert.strictEqual(result.status, 0, result.error?.message || result.stderr)
 
-      const packOutput = JSON.parse(result.stdout)
+      const packOutput = parseNpmPackJson(result.stdout)
       const packagedPaths = new Set(packOutput[0]?.files?.map((file) => file.path) ?? [])
 
       for (const requiredPath of [
