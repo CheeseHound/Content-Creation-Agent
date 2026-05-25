@@ -1,4 +1,4 @@
-import { normalizedPlatforms, planRenderWorkflow } from "./contract";
+import { buildRenderIntentFingerprint, normalizedPlatforms, planRenderWorkflow } from "./contract";
 import type {
   CreateRenderJobBody,
   CreateRenderJobDependencies,
@@ -80,6 +80,8 @@ export async function getRenderJobById(
 
 function buildRenderJobId(request: CreateRenderJobBody): string {
   const platformSegment = normalizedPlatforms(request.platforms).map(slugifyIdSegment).join("_");
+  const templateSegment = slugifyIdSegment(request.templateVariant);
+  const renderIntentSegment = buildRenderIntentFingerprint(request);
 
   return [
     "render_job",
@@ -88,6 +90,8 @@ function buildRenderJobId(request: CreateRenderJobBody): string {
     request.sourceAssetId,
     String(request.clipCount),
     platformSegment,
+    templateSegment,
+    renderIntentSegment,
   ].join("_");
 }
 

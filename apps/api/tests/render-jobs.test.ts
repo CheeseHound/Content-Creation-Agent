@@ -25,6 +25,31 @@ const VALID_REQUEST: CreateRenderJobBody = {
   audience: "founder-led B2B companies",
   clipCount: 4,
   platforms: ["tiktok", "instagram_reels", "youtube_shorts"],
+  templateVariant: "bold-captions",
+  templateParameters: {
+    hookText: "Stop wasting demo footage",
+    ctaText: "Book the full walkthrough",
+    showProgressBar: true,
+  },
+  styleOptions: {
+    fontFamily: "Inter",
+    brandColor: "#1D4ED8",
+    accentColor: "#F97316",
+    captionPosition: "bottom",
+    overlayPosition: "center",
+  },
+  captionTimeline: [
+    {
+      startMs: 0,
+      endMs: 1_800,
+      text: "Stop wasting your best demo footage.",
+    },
+    {
+      startMs: 1_800,
+      endMs: 3_600,
+      text: "Turn it into short clips with branded captions.",
+    },
+  ],
 };
 
 describe("POST /api/render-jobs", () => {
@@ -47,13 +72,59 @@ describe("POST /api/render-jobs", () => {
     assert.equal(response.body.data.queueJob.queueName, "content-ops-render");
     assert.equal(
       response.body.data.queueJob.idempotencyKey,
-      "render:workspace_123:project_456:asset_abc:4:instagram_reels,tiktok,youtube_shorts",
+      "render:workspace_123:project_456:asset_abc:4:instagram_reels,tiktok,youtube_shorts:bold-captions:9b32c29f9218",
     );
     assert.equal(response.body.data.queueJob.priority, 50);
     assert.equal(
       response.body.data.queueJob.payload.schema_version,
       "content_ops.render_job.v1",
     );
+    assert.equal(response.body.data.queueJob.payload.render.render_engine, "hyperframes");
+    assert.deepEqual(response.body.data.queueJob.payload.render.template, {
+      variant: "bold-captions",
+      parameters: {
+        cta_text: "Book the full walkthrough",
+        hook_text: "Stop wasting demo footage",
+        show_progress_bar: true,
+      },
+    });
+    assert.deepEqual(response.body.data.queueJob.payload.render.style_options, {
+      font_family: "Inter",
+      brand_color: "#1D4ED8",
+      accent_color: "#F97316",
+      caption_position: "bottom",
+      overlay_position: "center",
+    });
+    assert.deepEqual(response.body.data.queueJob.payload.render.caption_timeline, [
+      {
+        start_ms: 0,
+        end_ms: 1_800,
+        text: "Stop wasting your best demo footage.",
+      },
+      {
+        start_ms: 1_800,
+        end_ms: 3_600,
+        text: "Turn it into short clips with branded captions.",
+      },
+    ]);
+    assert.deepEqual(response.body.data.queueJob.payload.render.source_assets, [
+      {
+        role: "primary_video",
+        asset_id: "asset_abc",
+        storage_key: "workspaces/workspace_123/projects/project_456/uploads/asset_abc/founder-demo.mov",
+      },
+    ]);
+    assert.deepEqual(response.body.data.queueJob.payload.render.composition, {
+      aspect_ratio: "9:16",
+      width: 1080,
+      height: 1920,
+      fps: 30,
+    });
+    assert.deepEqual(response.body.data.queueJob.payload.render.output_settings, {
+      format: "mp4",
+      video_codec: "h264",
+      audio_codec: "aac",
+    });
     assert.deepEqual(response.body.data.queueJob.payload.render.platforms, [
       "instagram_reels",
       "tiktok",
@@ -120,6 +191,52 @@ describe("POST /api/render-jobs", () => {
     assert.deepEqual(
       response.body.error.details.map((detail) => detail.field),
       ["sourceSizeBytes", "clipCount", "platforms"],
+    );
+    assert.equal(dependencies.repository.createdJobs.length, 0);
+    assert.equal(dependencies.queue.enqueuedJobs.length, 0);
+  });
+
+  it("rejects unsafe Hyperframes template, style, and caption payloads", async () => {
+    const dependencies = createDependencies({
+      subscription: { tier: "free" },
+      usage: { activeRenderJobs: 0, renderedMinutesThisPeriod: 0 },
+    });
+    const handler = createRenderJobHandler(dependencies);
+
+    const response = await handler({
+      body: {
+        ...VALID_REQUEST,
+        templateVariant: "../shell",
+        styleOptions: {
+          ...VALID_REQUEST.styleOptions,
+          brandColor: "url(javascript:alert(1))",
+          captionPosition: "outside",
+        },
+        captionTimeline: [
+          {
+            startMs: 2_000,
+            endMs: 1_000,
+            text: "invalid cue",
+          },
+        ],
+      },
+    });
+
+    assert.equal(response.status, 400);
+    assert.equal(response.body.success, false);
+    if (response.body.success) {
+      assert.fail("Expected unsafe Hyperframes payload to fail request validation.");
+    }
+    assert.equal(response.body.error.code, "validation_error");
+    assert.ok(response.body.error.details);
+    assert.deepEqual(
+      response.body.error.details.map((detail) => detail.field),
+      [
+        "templateVariant",
+        "styleOptions.brandColor",
+        "styleOptions.captionPosition",
+        "captionTimeline[0]",
+      ],
     );
     assert.equal(dependencies.repository.createdJobs.length, 0);
     assert.equal(dependencies.queue.enqueuedJobs.length, 0);
@@ -249,7 +366,7 @@ describe("POST /api/render-jobs", () => {
     assert.equal(response.body.error.message, "Unable to read render job.");
   });
 
-  it("creates distinct render job ids for distinct platform sets", async () => {
+  it("creates distinct render job ids for distinct Hyperframes template styles", async () => {
     const dependencies = createDependencies({
       subscription: { tier: "studio" },
       usage: { activeRenderJobs: 0, renderedMinutesThisPeriod: 0 },
@@ -260,7 +377,10 @@ describe("POST /api/render-jobs", () => {
     const secondResponse = await handler({
       body: {
         ...VALID_REQUEST,
-        platforms: ["linkedin", "youtube_shorts"],
+        styleOptions: {
+          ...VALID_REQUEST.styleOptions,
+          brandColor: "#0F172A",
+        },
       },
     });
 
@@ -270,6 +390,10 @@ describe("POST /api/render-jobs", () => {
       assert.fail("Expected both render jobs to be accepted.");
     }
     assert.notEqual(firstResponse.body.data.renderJob.id, secondResponse.body.data.renderJob.id);
+    assert.notEqual(
+      firstResponse.body.data.queueJob.idempotencyKey,
+      secondResponse.body.data.queueJob.idempotencyKey,
+    );
     assert.equal(dependencies.repository.createdJobs.length, 2);
   });
 
@@ -375,7 +499,7 @@ const READY_RENDER_JOB: RenderJobRecord = {
   },
   queueJob: {
     queueName: "content-ops-render",
-    idempotencyKey: "render:workspace_123:project_456:asset_abc:4:instagram_reels,tiktok,youtube_shorts",
+    idempotencyKey: "render:workspace_123:project_456:asset_abc:4:instagram_reels,tiktok,youtube_shorts:bold-captions:9b32c29f9218",
     priority: 50,
     payload: {
       schema_version: "content_ops.render_job.v1",
@@ -391,11 +515,57 @@ const READY_RENDER_JOB: RenderJobRecord = {
         render_output_prefix: "workspaces/workspace_123/projects/project_456/renders/asset_abc/",
       },
       render: {
+        render_engine: "hyperframes",
         brand_name: "ClipOps",
         audience: "founder-led B2B companies",
         clip_count: 4,
         platforms: ["instagram_reels", "tiktok", "youtube_shorts"],
         estimated_minutes: 16,
+        template: {
+          variant: "bold-captions",
+          parameters: {
+            cta_text: "Book the full walkthrough",
+            hook_text: "Stop wasting demo footage",
+            show_progress_bar: true,
+          },
+        },
+        style_options: {
+          font_family: "Inter",
+          brand_color: "#1D4ED8",
+          accent_color: "#F97316",
+          caption_position: "bottom",
+          overlay_position: "center",
+        },
+        caption_timeline: [
+          {
+            start_ms: 0,
+            end_ms: 1_800,
+            text: "Stop wasting your best demo footage.",
+          },
+          {
+            start_ms: 1_800,
+            end_ms: 3_600,
+            text: "Turn it into short clips with branded captions.",
+          },
+        ],
+        source_assets: [
+          {
+            role: "primary_video",
+            asset_id: "asset_abc",
+            storage_key: "workspaces/workspace_123/projects/project_456/uploads/asset_abc/source.mov",
+          },
+        ],
+        composition: {
+          aspect_ratio: "9:16",
+          width: 1080,
+          height: 1920,
+          fps: 30,
+        },
+        output_settings: {
+          format: "mp4",
+          video_codec: "h264",
+          audio_codec: "aac",
+        },
       },
     },
   },

@@ -320,6 +320,7 @@
     "security:ioc-scan": "node scripts/ci/scan-supply-chain-iocs.js",
     "security:advisory-sources": "node scripts/ci/supply-chain-advisory-sources.js",
     "test:api": "tsc -p apps/api/tsconfig.json && node --test apps/api/dist/tests/*.test.js",
+    "test:worker": "tsc -p apps/worker/tsconfig.json && node --test apps/worker/dist/tests/*.test.js",
     "claw": "node scripts/claw.js",
     "orchestrate:status": "node scripts/orchestration-status.js",
     "orchestrate:worker": "bash scripts/orchestrate-codex-worker.sh",

@@ -20,6 +20,25 @@ const VALID_REQUEST: CreateRenderJobBody = {
   audience: "founder-led B2B companies",
   clipCount: 4,
   platforms: ["tiktok", "instagram_reels", "youtube_shorts"],
+  templateVariant: "bold-captions",
+  templateParameters: {
+    hookText: "Stop wasting demo footage",
+    showProgressBar: true,
+  },
+  styleOptions: {
+    fontFamily: "Inter",
+    brandColor: "#1D4ED8",
+    accentColor: "#F97316",
+    captionPosition: "bottom",
+    overlayPosition: "center",
+  },
+  captionTimeline: [
+    {
+      startMs: 0,
+      endMs: 1_800,
+      text: "Stop wasting your best demo footage.",
+    },
+  ],
 };
 
 describe("content_ops.render_job.v1 schema", () => {
@@ -33,7 +52,34 @@ describe("content_ops.render_job.v1 schema", () => {
 
     assert.equal(plan.accepted, true);
     assert.ok(plan.queueJob);
+    assert.equal(plan.queueJob.payload.render.render_engine, "hyperframes");
     assert.equal(validate(plan.queueJob.payload), true, JSON.stringify(validate.errors));
+  });
+
+  it("rejects malformed Hyperframes caption timelines", () => {
+    const validate = loadRenderJobSchemaValidator();
+    const plan = planRenderWorkflow({
+      request: VALID_REQUEST,
+      tier: "creator",
+      usage: { activeRenderJobs: 1, renderedMinutesThisPeriod: 24 },
+    });
+
+    assert.ok(plan.queueJob);
+    const payloadWithInvalidCaptionTimeline = {
+      ...plan.queueJob.payload,
+      render: {
+        ...plan.queueJob.payload.render,
+        caption_timeline: [
+          {
+            start_ms: -1,
+            end_ms: 1_000,
+            text: "bad cue",
+          },
+        ],
+      },
+    };
+
+    assert.equal(validate(payloadWithInvalidCaptionTimeline), false);
   });
 
   it("rejects undeclared credential fields", () => {

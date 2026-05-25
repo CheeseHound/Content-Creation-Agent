@@ -25,6 +25,25 @@ def _request(**overrides):
         "audience": "founder-led B2B companies",
         "clip_count": 4,
         "platforms": ("tiktok", "instagram_reels", "youtube_shorts"),
+        "template_variant": "bold-captions",
+        "template_parameters": {
+            "hook_text": "Stop wasting demo footage",
+            "show_progress_bar": True,
+        },
+        "style_options": {
+            "font_family": "Inter",
+            "brand_color": "#1D4ED8",
+            "accent_color": "#F97316",
+            "caption_position": "bottom",
+            "overlay_position": "center",
+        },
+        "caption_timeline": (
+            {
+                "start_ms": 0,
+                "end_ms": 1_800,
+                "text": "Stop wasting your best demo footage.",
+            },
+        ),
     }
     return RenderWorkflowRequest(**{**base, **overrides})
 
@@ -46,10 +65,26 @@ def test_plan_render_workflow_accepts_request_and_builds_queue_payload():
     assert plan.queue_job.queue_name == "content-ops-render"
     assert plan.queue_job.idempotency_key == (
         "render:workspace_123:project_456:asset_abc:4:"
-        "instagram_reels,tiktok,youtube_shorts"
+        "instagram_reels,tiktok,youtube_shorts:bold-captions:db8145bbf0dd"
     )
     assert plan.queue_job.payload["schema_version"] == "content_ops.render_job.v1"
     assert plan.queue_job.payload["storage"]["source_key"] == plan.storage_keys.raw_source_key
+    assert plan.queue_job.payload["render"]["render_engine"] == "hyperframes"
+    assert plan.queue_job.payload["render"]["template"] == {
+        "variant": "bold-captions",
+        "parameters": {
+            "hook_text": "Stop wasting demo footage",
+            "show_progress_bar": True,
+        },
+    }
+    assert plan.queue_job.payload["render"]["style_options"]["brand_color"] == "#1D4ED8"
+    assert plan.queue_job.payload["render"]["caption_timeline"] == [
+        {
+            "start_ms": 0,
+            "end_ms": 1_800,
+            "text": "Stop wasting your best demo footage.",
+        },
+    ]
     assert plan.queue_job.payload["render"]["clip_count"] == 4
     assert plan.queue_job.payload["render"]["platforms"] == [
         "instagram_reels",
@@ -134,3 +169,12 @@ def test_render_workflow_request_validates_external_inputs():
 
     with pytest.raises(ValueError, match="platforms"):
         _request(platforms=())
+
+    with pytest.raises(ValueError, match="template_variant"):
+        _request(template_variant="../shell")
+
+    with pytest.raises(ValueError, match="brand_color"):
+        _request(style_options={**_request().style_options, "brand_color": "javascript:red"})
+
+    with pytest.raises(ValueError, match="caption_timeline"):
+        _request(caption_timeline=({"start_ms": 2_000, "end_ms": 1_000, "text": "bad"},))

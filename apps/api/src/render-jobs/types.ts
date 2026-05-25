@@ -47,6 +47,33 @@ export interface CreateRenderJobBody {
   audience: string;
   clipCount: number;
   platforms: string[];
+  templateVariant: string;
+  templateParameters: RenderTemplateParameters;
+  styleOptions: RenderStyleOptions;
+  captionTimeline: RenderCaptionCue[];
+}
+
+export type RenderTemplateParameterValue = string | number | boolean;
+
+export type RenderTemplateParameters = Record<string, RenderTemplateParameterValue>;
+
+export type CaptionPosition = "top" | "center" | "bottom";
+
+export type OverlayPosition = "top" | "center" | "bottom" | "left" | "right";
+
+export interface RenderStyleOptions {
+  fontFamily: string;
+  brandColor: string;
+  accentColor?: string;
+  captionPosition: CaptionPosition;
+  overlayPosition: OverlayPosition;
+}
+
+export interface RenderCaptionCue {
+  startMs: number;
+  endMs: number;
+  text: string;
+  speaker?: string;
 }
 
 export interface MediaStorageKeys {
@@ -65,11 +92,45 @@ export interface QueueJobPayload {
   subscription_tier: SubscriptionTier;
   storage: MediaStorageKeys;
   render: {
+    render_engine: "hyperframes";
     brand_name: string;
     audience: string;
     clip_count: number;
     platforms: string[];
     estimated_minutes: number;
+    template: {
+      variant: string;
+      parameters: Record<string, RenderTemplateParameterValue>;
+    };
+    style_options: {
+      font_family: string;
+      brand_color: string;
+      accent_color?: string;
+      caption_position: CaptionPosition;
+      overlay_position: OverlayPosition;
+    };
+    caption_timeline: Array<{
+      start_ms: number;
+      end_ms: number;
+      text: string;
+      speaker?: string;
+    }>;
+    source_assets: Array<{
+      role: "primary_video";
+      asset_id: string;
+      storage_key: string;
+    }>;
+    composition: {
+      aspect_ratio: "9:16";
+      width: 1080;
+      height: 1920;
+      fps: 30;
+    };
+    output_settings: {
+      format: "mp4";
+      video_codec: "h264";
+      audio_codec: "aac";
+    };
   };
 }
 

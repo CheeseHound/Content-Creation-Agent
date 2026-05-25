@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type {
   CreateRenderJobBody,
   MediaStorageKeys,
@@ -125,11 +127,47 @@ export function planRenderWorkflow({
       subscription_tier: tier,
       storage: storageKeys,
       render: {
+        render_engine: "hyperframes",
         brand_name: request.brandName,
         audience: request.audience,
         clip_count: request.clipCount,
         platforms: normalizedPlatforms(request.platforms),
         estimated_minutes: estimatedRenderMinutes,
+        template: {
+          variant: request.templateVariant,
+          parameters: normalizeTemplateParameters(request.templateParameters),
+        },
+        style_options: {
+          font_family: request.styleOptions.fontFamily,
+          brand_color: request.styleOptions.brandColor,
+          ...(request.styleOptions.accentColor ? { accent_color: request.styleOptions.accentColor } : {}),
+          caption_position: request.styleOptions.captionPosition,
+          overlay_position: request.styleOptions.overlayPosition,
+        },
+        caption_timeline: request.captionTimeline.map((cue) => ({
+          start_ms: cue.startMs,
+          end_ms: cue.endMs,
+          text: cue.text,
+          ...(cue.speaker ? { speaker: cue.speaker } : {}),
+        })),
+        source_assets: [
+          {
+            role: "primary_video",
+            asset_id: request.sourceAssetId,
+            storage_key: storageKeys.source_key,
+          },
+        ],
+        composition: {
+          aspect_ratio: "9:16",
+          width: 1080,
+          height: 1920,
+          fps: 30,
+        },
+        output_settings: {
+          format: "mp4",
+          video_codec: "h264",
+          audio_codec: "aac",
+        },
       },
     },
   };
@@ -188,11 +226,63 @@ function buildIdempotencyKey(request: CreateRenderJobBody): string {
     request.sourceAssetId,
     String(request.clipCount),
     normalizedPlatforms(request.platforms).join(","),
+    request.templateVariant,
+    buildRenderIntentFingerprint(request),
   ].join(":");
+}
+
+export function buildRenderIntentFingerprint(request: Pick<
+  CreateRenderJobBody,
+  "templateVariant" | "templateParameters" | "styleOptions" | "captionTimeline"
+>): string {
+  return createHash("sha256")
+    .update(stableStringify({
+      captionTimeline: request.captionTimeline,
+      styleOptions: request.styleOptions,
+      templateParameters: request.templateParameters,
+      templateVariant: request.templateVariant,
+    }))
+    .digest("hex")
+    .slice(0, 12);
 }
 
 function slugifyFilename(value: string): string {
   const normalized = value.trim().replace(/[\\/]/g, " ").toLowerCase();
   const slug = normalized.replace(/[^a-z0-9.]+/g, "-").replace(/^[.-]+|[.-]+$/g, "");
   return slug || "source";
+}
+
+function normalizeTemplateParameters(
+  parameters: CreateRenderJobBody["templateParameters"],
+): CreateRenderJobBody["templateParameters"] {
+  return Object.fromEntries(
+    Object.entries(parameters)
+      .map(([key, value]) => [toSnakeCase(key), value] as const)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function toSnakeCase(value: string): string {
+  return value
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
 }

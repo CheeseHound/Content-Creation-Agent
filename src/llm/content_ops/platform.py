@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import hashlib
+import json
 import math
 import re
 from types import MappingProxyType
@@ -153,6 +155,10 @@ class RenderWorkflowRequest:
     audience: str
     clip_count: int
     platforms: tuple[str, ...]
+    template_variant: str
+    template_parameters: Mapping[str, str | int | float | bool]
+    style_options: Mapping[str, str]
+    caption_timeline: tuple[Mapping[str, Any], ...]
 
     def __post_init__(self) -> None:
         _require_text("workspace_id", self.workspace_id)
@@ -172,6 +178,11 @@ class RenderWorkflowRequest:
             raise ValueError("platforms must include at least one target")
         if any(not platform.strip() for platform in self.platforms):
             raise ValueError("platforms cannot contain blank values")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", self.template_variant.strip()):
+            raise ValueError("template_variant must be a safe slug")
+        _validate_template_parameters(self.template_parameters)
+        _validate_style_options(self.style_options)
+        _validate_caption_timeline(self.caption_timeline)
 
     @property
     def normalized_platforms(self) -> tuple[str, ...]:
@@ -357,11 +368,36 @@ def _build_queue_payload(
             "subscription_tier": tier.value,
             "storage": storage_keys.to_dict(),
             "render": {
+                "render_engine": "hyperframes",
                 "brand_name": request.brand_name,
                 "audience": request.audience,
                 "clip_count": request.clip_count,
                 "platforms": list(request.normalized_platforms),
                 "estimated_minutes": estimated_render_minutes,
+                "template": {
+                    "variant": request.template_variant,
+                    "parameters": dict(sorted(request.template_parameters.items())),
+                },
+                "style_options": dict(request.style_options),
+                "caption_timeline": [dict(cue) for cue in request.caption_timeline],
+                "source_assets": [
+                    {
+                        "role": "primary_video",
+                        "asset_id": request.source_asset_id,
+                        "storage_key": storage_keys.raw_source_key,
+                    }
+                ],
+                "composition": {
+                    "aspect_ratio": "9:16",
+                    "width": 1080,
+                    "height": 1920,
+                    "fps": 30,
+                },
+                "output_settings": {
+                    "format": "mp4",
+                    "video_codec": "h264",
+                    "audio_codec": "aac",
+                },
             },
         }
     )
@@ -371,7 +407,8 @@ def _build_idempotency_key(request: RenderWorkflowRequest) -> str:
     platforms = ",".join(request.normalized_platforms)
     return (
         f"render:{request.workspace_id}:{request.project_id}:"
-        f"{request.source_asset_id}:{request.clip_count}:{platforms}"
+        f"{request.source_asset_id}:{request.clip_count}:{platforms}:"
+        f"{request.template_variant}:{_render_intent_fingerprint(request)}"
     )
 
 
@@ -384,3 +421,85 @@ def _slugify_filename(value: str) -> str:
 def _require_text(name: str, value: str) -> None:
     if not value.strip():
         raise ValueError(f"{name} is required")
+
+
+def _render_intent_fingerprint(request: RenderWorkflowRequest) -> str:
+    serialized = json.dumps(
+        {
+            "caption_timeline": request.caption_timeline,
+            "style_options": request.style_options,
+            "template_parameters": request.template_parameters,
+            "template_variant": request.template_variant,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:12]
+
+
+def _validate_template_parameters(parameters: Mapping[str, str | int | float | bool]) -> None:
+    if len(parameters) > 50:
+        raise ValueError("template_parameters cannot contain more than 50 entries")
+    for key, value in parameters.items():
+        if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,63}", key):
+            raise ValueError("template_parameters keys must be safe identifiers")
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            continue
+        if isinstance(value, str) and _is_safe_display_text(value, 500):
+            continue
+        raise ValueError("template_parameters values must be safe primitive values")
+
+
+def _validate_style_options(style_options: Mapping[str, str]) -> None:
+    required_fields = {
+        "font_family",
+        "brand_color",
+        "caption_position",
+        "overlay_position",
+    }
+    missing_fields = required_fields - set(style_options)
+    if missing_fields:
+        raise ValueError(f"style_options missing required fields: {', '.join(sorted(missing_fields))}")
+    if not _is_safe_display_text(style_options["font_family"], 80):
+        raise ValueError("font_family must be safe display text")
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", style_options["brand_color"]):
+        raise ValueError("brand_color must be a six-digit hex color")
+    if "accent_color" in style_options and not re.fullmatch(r"#[0-9a-fA-F]{6}", style_options["accent_color"]):
+        raise ValueError("accent_color must be a six-digit hex color")
+    if style_options["caption_position"] not in {"top", "center", "bottom"}:
+        raise ValueError("caption_position must be top, center, or bottom")
+    if style_options["overlay_position"] not in {"top", "center", "bottom", "left", "right"}:
+        raise ValueError("overlay_position must be top, center, bottom, left, or right")
+
+
+def _validate_caption_timeline(caption_timeline: tuple[Mapping[str, Any], ...]) -> None:
+    if not caption_timeline:
+        raise ValueError("caption_timeline must include at least one cue")
+    if len(caption_timeline) > 500:
+        raise ValueError("caption_timeline cannot contain more than 500 cues")
+    for cue in caption_timeline:
+        start_ms = cue.get("start_ms")
+        end_ms = cue.get("end_ms")
+        text = cue.get("text")
+        if (
+            not isinstance(start_ms, int)
+            or start_ms < 0
+            or not isinstance(end_ms, int)
+            or end_ms <= start_ms
+            or not isinstance(text, str)
+            or not _is_safe_display_text(text, 500)
+        ):
+            raise ValueError("caption_timeline cues must include start_ms, end_ms, and safe text")
+        speaker = cue.get("speaker")
+        if speaker is not None and (not isinstance(speaker, str) or not _is_safe_display_text(speaker, 80)):
+            raise ValueError("caption_timeline speaker must be safe display text")
+
+
+def _is_safe_display_text(value: str, max_length: int) -> bool:
+    normalized = value.strip()
+    return (
+        0 < len(normalized) <= max_length
+        and not re.search(r"[\x00-\x1f\x7f]|javascript:|data:|https?://|[`$<>]", normalized, re.IGNORECASE)
+    )

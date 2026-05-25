@@ -22,11 +22,32 @@ export function createPostgresClient(databaseUrl: string): ManagedPostgresClient
       const result = await pool.query(text, values ? [...values] : undefined);
 
       return {
-        rows: [...result.rows] as TRow[],
+        rows: normalizePostgresRows(result) as TRow[],
       };
     },
     async close(): Promise<void> {
       await pool.end();
     },
   };
+}
+
+export function normalizePostgresRows(result: unknown): unknown[] {
+  if (Array.isArray(result)) {
+    return result.flatMap((entry) => normalizePostgresRows(entry));
+  }
+
+  if (hasRows(result)) {
+    return [...result.rows];
+  }
+
+  return [];
+}
+
+function hasRows(value: unknown): value is { rows: readonly unknown[] } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "rows" in value &&
+    Array.isArray((value as { rows: unknown }).rows)
+  );
 }

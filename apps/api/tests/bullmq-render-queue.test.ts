@@ -7,7 +7,7 @@ import type { QueueJob, QueueJobPayload } from "../src/render-jobs/types";
 
 const QUEUE_JOB: QueueJob = {
   queueName: "content-ops-render",
-  idempotencyKey: "render:workspace_123:project_456:asset_abc:4:instagram_reels,tiktok,youtube_shorts",
+  idempotencyKey: "render:workspace_123:project_456:asset_abc:4:instagram_reels,tiktok,youtube_shorts:bold-captions:9b32c29f9218",
   priority: 50,
   payload: {
     schema_version: "content_ops.render_job.v1",
@@ -23,11 +23,57 @@ const QUEUE_JOB: QueueJob = {
       render_output_prefix: "workspaces/workspace_123/projects/project_456/renders/asset_abc/",
     },
     render: {
+      render_engine: "hyperframes",
       brand_name: "ClipOps",
       audience: "founder-led B2B companies",
       clip_count: 4,
       platforms: ["instagram_reels", "tiktok", "youtube_shorts"],
       estimated_minutes: 16,
+      template: {
+        variant: "bold-captions",
+        parameters: {
+          cta_text: "Book the full walkthrough",
+          hook_text: "Stop wasting demo footage",
+          show_progress_bar: true,
+        },
+      },
+      style_options: {
+        font_family: "Inter",
+        brand_color: "#1D4ED8",
+        accent_color: "#F97316",
+        caption_position: "bottom",
+        overlay_position: "center",
+      },
+      caption_timeline: [
+        {
+          start_ms: 0,
+          end_ms: 1_800,
+          text: "Stop wasting your best demo footage.",
+        },
+        {
+          start_ms: 1_800,
+          end_ms: 3_600,
+          text: "Turn it into short clips with branded captions.",
+        },
+      ],
+      source_assets: [
+        {
+          role: "primary_video",
+          asset_id: "asset_abc",
+          storage_key: "workspaces/workspace_123/projects/project_456/uploads/asset_abc/founder-demo.mov",
+        },
+      ],
+      composition: {
+        aspect_ratio: "9:16",
+        width: 1080,
+        height: 1920,
+        fps: 30,
+      },
+      output_settings: {
+        format: "mp4",
+        video_codec: "h264",
+        audio_codec: "aac",
+      },
     },
   },
 };

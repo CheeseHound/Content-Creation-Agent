@@ -13,7 +13,7 @@ const STORAGE_KEYS = {
 
 const QUEUE_JOB: QueueJob = {
   queueName: "content-ops-render",
-  idempotencyKey: "render:workspace_123:project_456:asset_abc:4:instagram_reels,tiktok",
+  idempotencyKey: "render:workspace_123:project_456:asset_abc:4:instagram_reels,tiktok:bold-captions:fixture",
   priority: 50,
   payload: {
     schema_version: "content_ops.render_job.v1",
@@ -24,11 +24,49 @@ const QUEUE_JOB: QueueJob = {
     subscription_tier: "creator",
     storage: STORAGE_KEYS,
     render: {
+      render_engine: "hyperframes",
       brand_name: "ClipOps",
       audience: "founders",
       clip_count: 4,
       platforms: ["instagram_reels", "tiktok"],
       estimated_minutes: 16,
+      template: {
+        variant: "bold-captions",
+        parameters: {
+          hook_text: "Stop wasting demo footage",
+        },
+      },
+      style_options: {
+        font_family: "Inter",
+        brand_color: "#1D4ED8",
+        caption_position: "bottom",
+        overlay_position: "center",
+      },
+      caption_timeline: [
+        {
+          start_ms: 0,
+          end_ms: 1_800,
+          text: "Stop wasting your best demo footage.",
+        },
+      ],
+      source_assets: [
+        {
+          role: "primary_video",
+          asset_id: "asset_abc",
+          storage_key: STORAGE_KEYS.source_key,
+        },
+      ],
+      composition: {
+        aspect_ratio: "9:16",
+        width: 1080,
+        height: 1920,
+        fps: 30,
+      },
+      output_settings: {
+        format: "mp4",
+        video_codec: "h264",
+        audio_codec: "aac",
+      },
     },
   },
 };
