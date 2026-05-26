@@ -1,36 +1,28 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { join } from "node:path";
 
 import {
   assertNoSecretLikeFields,
   type QueueJobPayload,
   type RenderOutputManifest,
   validateQueuePayload,
-  WorkerValidationError,
 } from "./payload";
+import type {
+  HyperframesRenderResult,
+  HyperframesWorkerRuntime,
+  RenderWorkerClaim,
+  RenderWorkerRepository,
+} from "./render-worker-types";
+import {
+  assertInside,
+  buildWorkspacePaths,
+  safeFailureMessage,
+  safePathSegment,
+  validatePayloadStorageScope,
+  type WorkspacePaths,
+} from "./render-workspace";
 
-export interface HyperframesWorkerRuntime {
-  chromeExecutablePath: string;
-  ffmpegPath: string;
-  hyperframesCommand: string;
-}
-
-export interface RenderWorkerClaim {
-  renderJobId: string;
-  alreadyReady?: boolean;
-}
-
-export interface RenderWorkerRepository {
-  markRendering(
-    payload: QueueJobPayload,
-    metadata: { workspaceManifestPath: string },
-  ): Promise<RenderWorkerClaim>;
-  markReady(claim: RenderWorkerClaim, outputManifest: RenderOutputManifest): Promise<void>;
-  markFailed(
-    payload: QueueJobPayload,
-    failure: { code: string; message: string },
-  ): Promise<void>;
-}
+export type { HyperframesWorkerRuntime, RenderWorkerClaim, RenderWorkerRepository };
 
 export interface ProcessMockHyperframesRenderJobDependencies {
   repository: RenderWorkerRepository;
@@ -39,29 +31,7 @@ export interface ProcessMockHyperframesRenderJobDependencies {
   schemaPath?: string;
 }
 
-export type MockHyperframesRenderResult =
-  | {
-    status: "ready";
-    renderJobId: string;
-    workspaceManifestPath: string;
-  }
-  | {
-    status: "skipped";
-    renderJobId: string;
-    reason: "already_ready";
-  }
-  | {
-    status: "failure";
-    errorMessage: string;
-    workspaceManifestPath?: string;
-  };
-
-interface WorkspacePaths {
-  root: string;
-  compositionDirectory: string;
-  sourceReferencesDirectory: string;
-  workspaceManifestPath: string;
-}
+export type MockHyperframesRenderResult = HyperframesRenderResult;
 
 interface StagedSourceAsset {
   role: "primary_video";
@@ -116,7 +86,7 @@ export async function processMockHyperframesRenderJob(
       workspaceManifestPath: workspacePaths.workspaceManifestPath,
     };
   } catch (error) {
-    const message = safeFailureMessage(error);
+    const message = safeFailureMessage(error, "mock render worker failed");
 
     if (payload) {
       await dependencies.repository.markFailed(payload, {
@@ -189,84 +159,4 @@ async function stageSourceAssetReferences(
 
     return stagedAsset;
   }));
-}
-
-function buildWorkspacePaths(workspaceRoot: string, payload: QueueJobPayload): WorkspacePaths {
-  const root = resolve(workspaceRoot);
-  const workspaceId = safePathSegment(payload.workspace_id, "workspace id");
-  const projectId = safePathSegment(payload.project_id, "project id");
-  const sourceAssetId = safePathSegment(payload.source_asset_id, "source asset id");
-  const compositionDirectory = assertInside(
-    root,
-    join(
-      root,
-      "workspaces",
-      workspaceId,
-      "projects",
-      projectId,
-      "render-jobs",
-      sourceAssetId,
-      "composition",
-    ),
-  );
-
-  return {
-    root,
-    compositionDirectory,
-    sourceReferencesDirectory: assertInside(root, join(compositionDirectory, "source-refs")),
-    workspaceManifestPath: assertInside(root, join(compositionDirectory, "render-workspace-manifest.json")),
-  };
-}
-
-function validatePayloadStorageScope(payload: QueueJobPayload): void {
-  const expectedPrefix = `workspaces/${payload.workspace_id}/projects/${payload.project_id}/`;
-  const keys = [
-    payload.storage.source_key,
-    payload.storage.audio_key,
-    payload.storage.transcript_key,
-    payload.storage.render_output_prefix,
-    ...payload.render.source_assets.map((asset) => asset.storage_key),
-  ];
-
-  keys.forEach((key) => {
-    if (!key.startsWith(expectedPrefix) || key.includes("..") || key.startsWith("/")) {
-      throw new WorkerValidationError(
-        "storage keys must stay under the payload workspace and project prefix",
-        "render workspace validation failed",
-      );
-    }
-  });
-}
-
-function safePathSegment(value: string, label: string): string {
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(value)) {
-    throw new WorkerValidationError(
-      `${label} is not safe for a render workspace path`,
-      "render workspace validation failed",
-    );
-  }
-
-  return value;
-}
-
-function assertInside(root: string, candidate: string): string {
-  const resolvedCandidate = resolve(candidate);
-  const relativePath = relative(root, resolvedCandidate);
-
-  if (relativePath === "" || relativePath.startsWith("..") || relativePath.includes("..")) {
-    throw new WorkerValidationError(
-      "render workspace path escaped the worker root",
-      "render workspace validation failed",
-    );
-  }
-
-  return resolvedCandidate;
-}
-
-function safeFailureMessage(error: unknown): string {
-  if (error instanceof WorkerValidationError) {
-    return error.publicMessage;
-  }
-
-  return "mock render worker failed";
 }

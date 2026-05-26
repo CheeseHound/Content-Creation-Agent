@@ -1,5 +1,10 @@
 import { apiError, created, ok, type HttpResponse } from "../api-response";
-import { createRenderJob, getRenderJobById, RenderJobPlanRejectedError } from "./service";
+import {
+  createRenderJob,
+  getRenderJobById,
+  RenderJobActiveEditBriefRejectedError,
+  RenderJobPlanRejectedError,
+} from "./service";
 import type {
   CreateRenderJobDependencies,
   CreateRenderJobResult,
@@ -44,6 +49,15 @@ export function createRenderJobHandler(dependencies: CreateRenderJobDependencies
     } catch (error) {
       if (error instanceof RenderJobPlanRejectedError) {
         return apiError(403, error.code, error.message);
+      }
+
+      if (error instanceof RenderJobActiveEditBriefRejectedError) {
+        return apiError(
+          409,
+          "invalid_active_edit_brief",
+          error.message,
+          error.details,
+        );
       }
 
       return apiError(500, "internal_error", "Unable to create render job.");

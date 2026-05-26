@@ -75,6 +75,7 @@ examples/sessions/*.tmp
 
 # Local drafts
 marketing/
+assets/videos/*.mp4
 .dmux/
 .dmux-hooks/
 .claude/worktrees/

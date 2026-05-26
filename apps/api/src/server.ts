@@ -6,6 +6,13 @@ import {
   createPostgresClient,
   type ManagedPostgresClient,
 } from "./db/postgres-client";
+import { PostgresEditBriefRepository } from "./edit-briefs/postgres-repository";
+import { createEditBriefHandler } from "./edit-briefs/route";
+import type {
+  CreateEditBriefDependencies,
+  EditBriefReadModel,
+  EditBriefVersionRecord,
+} from "./edit-briefs/types";
 import { createBullMqRenderQueue } from "./queue/bullmq-render-queue";
 import { DEFAULT_RENDER_QUEUE } from "./render-jobs/contract";
 import { PostgresRenderJobRepository } from "./render-jobs/postgres-repository";
@@ -33,7 +40,8 @@ import type {
 
 export interface ApiServerDependencies
   extends CreateRenderJobDependencies,
-    CreateUploadPresignDependencies {}
+    CreateUploadPresignDependencies,
+    CreateEditBriefDependencies {}
 
 export interface ApiRuntimeDependencies extends ApiServerDependencies {
   close(): Promise<void>;
@@ -56,6 +64,7 @@ export function createApiServer(dependencies: ApiServerDependencies): http.Serve
   const renderJobHandler = createRenderJobHandler(dependencies);
   const getRenderJobHandler = createGetRenderJobHandler(dependencies);
   const uploadPresignHandler = createUploadPresignHandler(dependencies);
+  const editBriefHandler = createEditBriefHandler(dependencies);
 
   return http.createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
@@ -70,6 +79,13 @@ export function createApiServer(dependencies: ApiServerDependencies): http.Serve
     if (request.method === "POST" && url.pathname === "/api/render-jobs") {
       const body = await readJsonBody(request);
       const routeResponse = await renderJobHandler({ body });
+      writeJson(response, routeResponse);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/edit-briefs") {
+      const body = await readJsonBody(request);
+      const routeResponse = await editBriefHandler({ body });
       writeJson(response, routeResponse);
       return;
     }
@@ -93,8 +109,10 @@ export function createInMemoryDependencies(): ApiServerDependencies {
     repository,
     queue,
     outputSigner: new InMemoryDownloadSigner(),
+    activeEditBriefRepository: repository,
     uploadRepository: repository,
     signer: new InMemoryUploadSigner(),
+    editBriefRepository: repository,
   };
 }
 
@@ -135,12 +153,16 @@ export async function createPostgresDependencies({
     throw error;
   }
 
+  const editBriefRepository = new PostgresEditBriefRepository(client);
+
   return {
     repository: new PostgresRenderJobRepository(client),
     queue,
     outputSigner: signer,
+    activeEditBriefRepository: editBriefRepository,
     uploadRepository: new PostgresUploadRepository(client),
     signer,
+    editBriefRepository,
     uploadTtlSeconds,
     outputDownloadTtlSeconds,
     async close(): Promise<void> {
@@ -185,6 +207,7 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
   private readonly usage: UsageSnapshot = { activeRenderJobs: 0, renderedMinutesThisPeriod: 0 };
   private jobsById: ReadonlyMap<string, RenderJobRecord> = new Map();
   private mediaAssetsById: ReadonlyMap<string, MediaAssetRecord> = new Map();
+  private editBriefsById: ReadonlyMap<string, readonly EditBriefVersionRecord[]> = new Map();
 
   async getWorkspaceSubscription(_workspaceId: string): Promise<WorkspaceSubscription> {
     return this.subscription;
@@ -206,6 +229,54 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
   async createMediaAsset(record: MediaAssetRecord): Promise<MediaAssetRecord> {
     this.mediaAssetsById = new Map([...this.mediaAssetsById.entries(), [record.id, record]]);
     return record;
+  }
+
+  async createEditBriefVersion(record: EditBriefVersionRecord): Promise<EditBriefVersionRecord> {
+    const versions = this.editBriefsById.get(record.editBriefId) ?? [];
+    const createdRecord = {
+      ...record,
+      versionNumber: versions.length + 1,
+    };
+
+    this.editBriefsById = new Map([
+      ...this.editBriefsById.entries(),
+      [record.editBriefId, [...versions, createdRecord]],
+    ]);
+    return createdRecord;
+  }
+
+  async getActiveEditBrief(request: {
+    workspaceId: string;
+    projectId: string;
+    sourceAssetId?: string;
+  }): Promise<EditBriefReadModel | undefined> {
+    const versions = [...this.editBriefsById.values()].flat();
+    const matchingVersions = versions.filter((version) =>
+      version.workspaceId === request.workspaceId &&
+      version.projectId === request.projectId,
+    );
+    const sourceSpecificVersion = matchingVersions
+      .filter((version) => version.sourceAssetId === request.sourceAssetId)
+      .at(-1);
+    const projectVersion = matchingVersions
+      .filter((version) => version.sourceAssetId === undefined)
+      .at(-1);
+    const activeVersion = sourceSpecificVersion ?? projectVersion;
+
+    if (!activeVersion) {
+      return undefined;
+    }
+
+    return {
+      id: activeVersion.editBriefId,
+      versionId: activeVersion.id,
+      workspaceId: activeVersion.workspaceId,
+      projectId: activeVersion.projectId,
+      userId: activeVersion.userId,
+      ...(activeVersion.sourceAssetId ? { sourceAssetId: activeVersion.sourceAssetId } : {}),
+      versionNumber: activeVersion.versionNumber,
+      settings: activeVersion.settings,
+    };
   }
 }
 

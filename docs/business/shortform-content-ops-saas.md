@@ -116,6 +116,13 @@ billing and transcription integrations before accepting traffic.
 Completed render jobs can now return short-lived signed output download URLs
 from the render job read endpoint when a worker has persisted an output
 manifest.
+Edit brief intake now has a backend contract at `POST /api/edit-briefs`, backed
+by `schemas/content-ops-edit-brief-v1.schema.json`. The API accepts structured
+settings, a nonblank `chatMessage` that is deterministically mapped into
+settings, or a minimal request with no chat content. Empty chat input returns
+deterministic defaults for the user to tweak or leave unchanged. Render-job
+payloads can carry the resulting structured brief as `render.edit_brief`
+without raw chat text or credentials.
 
 It defines:
 
@@ -123,6 +130,11 @@ It defines:
 - monthly render-minute and active-job gates
 - deterministic R2/S3 object keys
 - queue payloads for worker containers
+- defaultable edit brief settings for goal, tone, pacing, platforms,
+  include/exclude moments, clip length, captions, crop strategy, music, and
+  editorial rules
+- optional structured edit brief settings in render-job payloads for clip
+  scoring and render planning
 - idempotency keys for safe retries
 - allowed render job state transitions
 
@@ -169,6 +181,10 @@ Minimum backend endpoints:
 - `POST /api/uploads/presign` returns a signed upload target. Initial API
   handler implemented for PUT uploads with media asset persistence and plan
   upload-size checks.
+- `POST /api/edit-briefs` creates a versioned structured edit brief. Initial
+  API handler implemented with safe text validation, default settings for empty
+  chat input, deterministic chat-message extraction, and append-only version
+  persistence.
 - `POST /api/render-jobs` validates subscription usage and enqueues work.
   Initial API handler and Redis/BullMQ producer implemented.
 - `GET /api/render-jobs/:id` returns job status and output URLs. Initial API
@@ -198,6 +214,8 @@ Minimum Postgres tables:
 - `subscriptions`
 - `projects`
 - `media_assets`
+- `edit_briefs`
+- `edit_brief_versions`
 - `render_jobs`
 - `usage_ledger`
 - `webhook_events`

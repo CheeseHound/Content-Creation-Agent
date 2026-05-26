@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { createGetRenderJobHandler, createRenderJobHandler } from "../src/render-jobs/route";
+import type { EditBriefReadModel, EditBriefSettings } from "../src/edit-briefs/types";
 import type {
   CreateRenderJobBody,
   RenderJobRecord,
@@ -137,6 +138,250 @@ describe("POST /api/render-jobs", () => {
     assert.equal(dependencies.repository.createdJobs.length, 1);
     assert.equal(dependencies.queue.enqueuedJobs.length, 1);
     assert.doesNotMatch(JSON.stringify(response.body), /OPENAI_API_KEY|STRIPE_SECRET_KEY/);
+  });
+
+  it("carries active edit brief settings into the worker payload without raw chat text", async () => {
+    const dependencies = createDependencies({
+      subscription: { tier: "creator" },
+      usage: { activeRenderJobs: 1, renderedMinutesThisPeriod: 24 },
+    });
+    const handler = createRenderJobHandler(dependencies);
+
+    const response = await handler({
+      body: {
+        ...VALID_REQUEST,
+        editBrief: {
+          id: "edit_brief_workspace_123_project_456_asset_abc",
+          versionId: "edit_brief_version_workspace_123_project_456_asset_abc_1",
+          versionNumber: 1,
+          settings: {
+            schemaVersion: "content_ops.edit_brief.v1",
+            goal: "Create a punchy launch clip.",
+            tone: "funny",
+            pacing: "fast",
+            targetPlatforms: ["tiktok", "linkedin"],
+            include: [
+              {
+                label: "dashboard reveal",
+              },
+            ],
+            exclude: [
+              {
+                label: "rambling intro",
+              },
+            ],
+            clipLengthSeconds: {
+              min: 30,
+              max: 45,
+            },
+            captionStyle: {
+              preset: "bold",
+              density: "medium",
+              emoji: false,
+            },
+            cropStrategy: "speaker_focus",
+            music: {
+              mood: "upbeat",
+              allowLicensed: false,
+            },
+            editorialRules: ["Open on the strongest demo moment."],
+          },
+        },
+      },
+    });
+
+    assert.equal(response.status, 201);
+    assert.equal(response.body.success, true);
+    if (!response.body.success) {
+      assert.fail("Expected render job creation with edit brief to succeed.");
+    }
+    assert.deepEqual(response.body.data.queueJob.payload.render.edit_brief, {
+      id: "edit_brief_workspace_123_project_456_asset_abc",
+      version_id: "edit_brief_version_workspace_123_project_456_asset_abc_1",
+      version_number: 1,
+      settings: {
+        schema_version: "content_ops.edit_brief.v1",
+        goal: "Create a punchy launch clip.",
+        tone: "funny",
+        pacing: "fast",
+        target_platforms: ["linkedin", "tiktok"],
+        include: [
+          {
+            label: "dashboard reveal",
+          },
+        ],
+        exclude: [
+          {
+            label: "rambling intro",
+          },
+        ],
+        clip_length_seconds: {
+          min: 30,
+          max: 45,
+        },
+        caption_style: {
+          preset: "bold",
+          density: "medium",
+          emoji: false,
+        },
+        crop_strategy: "speaker_focus",
+        music: {
+          mood: "upbeat",
+          allow_licensed: false,
+        },
+        editorial_rules: ["Open on the strongest demo moment."],
+      },
+    });
+    assert.doesNotMatch(JSON.stringify(response.body.data.queueJob.payload), /Make it funny|chatMessage|OPENAI|STRIPE|SECRET/);
+  });
+
+  it("auto-attaches the active edit brief when the render request omits editBrief", async () => {
+    const activeEditBrief = createActiveEditBrief();
+    const dependencies = createDependencies({
+      subscription: { tier: "creator" },
+      usage: { activeRenderJobs: 1, renderedMinutesThisPeriod: 24 },
+      activeEditBrief,
+    });
+    const handler = createRenderJobHandler(dependencies);
+
+    const response = await handler({ body: VALID_REQUEST });
+
+    assert.equal(response.status, 201);
+    assert.equal(response.body.success, true);
+    if (!response.body.success) {
+      assert.fail("Expected render job creation with active edit brief to succeed.");
+    }
+    assert.deepEqual(dependencies.repository.activeEditBriefLookups, [
+      {
+        workspaceId: "workspace_123",
+        projectId: "project_456",
+        sourceAssetId: "asset_abc",
+      },
+    ]);
+    assert.equal(
+      response.body.data.queueJob.payload.render.edit_brief?.version_id,
+      activeEditBrief.versionId,
+    );
+    assert.equal(
+      response.body.data.queueJob.payload.render.edit_brief?.settings.tone,
+      "funny",
+    );
+  });
+
+  it("keeps render job creation working when no active edit brief exists", async () => {
+    const dependencies = createDependencies({
+      subscription: { tier: "creator" },
+      usage: { activeRenderJobs: 1, renderedMinutesThisPeriod: 24 },
+    });
+    const handler = createRenderJobHandler(dependencies);
+
+    const response = await handler({ body: VALID_REQUEST });
+
+    assert.equal(response.status, 201);
+    assert.equal(response.body.success, true);
+    if (!response.body.success) {
+      assert.fail("Expected render job creation without active edit brief to succeed.");
+    }
+    assert.equal(response.body.data.queueJob.payload.render.edit_brief, undefined);
+    assert.equal(dependencies.repository.createdJobs.length, 1);
+    assert.equal(dependencies.queue.enqueuedJobs.length, 1);
+  });
+
+  it("uses explicit editBrief request data instead of active lookup results", async () => {
+    const activeEditBrief = createActiveEditBrief({
+      versionId: "edit_brief_version_workspace_123_project_456_asset_abc_active",
+    });
+    const explicitEditBrief = {
+      id: "edit_brief_workspace_123_project_456_asset_abc_override",
+      versionId: "edit_brief_version_workspace_123_project_456_asset_abc_override",
+      versionNumber: 2,
+      settings: {
+        ...activeEditBrief.settings,
+        tone: "authoritative" as const,
+        pacing: "balanced" as const,
+        goal: "Prioritize the explicit render settings.",
+      },
+    };
+    const dependencies = createDependencies({
+      subscription: { tier: "creator" },
+      usage: { activeRenderJobs: 1, renderedMinutesThisPeriod: 24 },
+      activeEditBrief,
+    });
+    const handler = createRenderJobHandler(dependencies);
+
+    const response = await handler({
+      body: {
+        ...VALID_REQUEST,
+        editBrief: explicitEditBrief,
+      },
+    });
+
+    assert.equal(response.status, 201);
+    assert.equal(response.body.success, true);
+    if (!response.body.success) {
+      assert.fail("Expected render job creation with explicit edit brief to succeed.");
+    }
+    assert.deepEqual(dependencies.repository.activeEditBriefLookups, []);
+    assert.equal(
+      response.body.data.queueJob.payload.render.edit_brief?.version_id,
+      explicitEditBrief.versionId,
+    );
+    assert.equal(
+      response.body.data.queueJob.payload.render.edit_brief?.settings.tone,
+      "authoritative",
+    );
+  });
+
+  it("does not leak raw chat text from persisted active edit brief settings into the render payload", async () => {
+    const activeEditBrief = createActiveEditBrief({
+      settings: {
+        ...createEditBriefSettings(),
+        chatMessage: "This raw note should stay out of worker payloads.",
+      } as EditBriefSettings & { chatMessage: string },
+    });
+    const dependencies = createDependencies({
+      subscription: { tier: "creator" },
+      usage: { activeRenderJobs: 1, renderedMinutesThisPeriod: 24 },
+      activeEditBrief,
+    });
+    const handler = createRenderJobHandler(dependencies);
+
+    const response = await handler({ body: VALID_REQUEST });
+
+    assert.equal(response.status, 201);
+    assert.equal(response.body.success, true);
+    if (!response.body.success) {
+      assert.fail("Expected render job creation with active edit brief to succeed.");
+    }
+    assert.doesNotMatch(
+      JSON.stringify(response.body.data.queueJob.payload),
+      /chatMessage|raw note should stay out/,
+    );
+  });
+
+  it("rejects unsafe active edit brief settings before creating or enqueueing a render job", async () => {
+    const dependencies = createDependencies({
+      subscription: { tier: "creator" },
+      usage: { activeRenderJobs: 1, renderedMinutesThisPeriod: 24 },
+      activeEditBrief: createActiveEditBrief({
+        settings: {
+          ...createEditBriefSettings(),
+          goal: "Use sk-secret-token in the caption.",
+        },
+      }),
+    });
+    const handler = createRenderJobHandler(dependencies);
+
+    const response = await handler({ body: VALID_REQUEST });
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.success, false);
+    if (response.body.success) {
+      assert.fail("Expected unsafe active edit brief to be rejected.");
+    }
+    assert.equal(response.body.error.code, "invalid_active_edit_brief");
+    assert.equal(dependencies.repository.createdJobs.length, 0);
+    assert.equal(dependencies.queue.enqueuedJobs.length, 0);
   });
 
   it("rejects quota-exceeded requests before creating or enqueueing a job", async () => {
@@ -419,16 +664,19 @@ function createDependencies({
   subscription,
   usage,
   outputSigner,
+  activeEditBrief,
 }: {
   subscription: WorkspaceSubscription;
   usage: UsageSnapshot;
   outputSigner?: DownloadSigner;
+  activeEditBrief?: EditBriefReadModel;
 }) {
-  const repository = new InMemoryRenderJobRepository(subscription, usage);
+  const repository = new InMemoryRenderJobRepository(subscription, usage, activeEditBrief);
   const queue = new InMemoryRenderQueue();
   return {
     repository,
     queue,
+    activeEditBriefRepository: repository,
     outputSigner,
     now: () => new Date("2026-05-22T12:00:00.000Z"),
   };
@@ -436,10 +684,16 @@ function createDependencies({
 
 class InMemoryRenderJobRepository implements RenderJobRepository {
   createdJobs: readonly RenderJobRecord[] = [];
+  activeEditBriefLookups: ReadonlyArray<{
+    workspaceId: string;
+    projectId: string;
+    sourceAssetId?: string;
+  }> = [];
 
   constructor(
     private readonly subscription: WorkspaceSubscription,
     private readonly usage: UsageSnapshot,
+    private readonly activeEditBrief?: EditBriefReadModel,
   ) {}
 
   async getWorkspaceSubscription(_workspaceId: string): Promise<WorkspaceSubscription> {
@@ -457,6 +711,15 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
 
   async getRenderJobById(id: string): Promise<RenderJobRecord | undefined> {
     return this.createdJobs.find((job) => job.id === id);
+  }
+
+  async getActiveEditBrief(request: {
+    workspaceId: string;
+    projectId: string;
+    sourceAssetId?: string;
+  }): Promise<EditBriefReadModel | undefined> {
+    this.activeEditBriefLookups = [...this.activeEditBriefLookups, request];
+    return this.activeEditBrief;
   }
 }
 
@@ -570,3 +833,52 @@ const READY_RENDER_JOB: RenderJobRecord = {
     },
   },
 };
+
+function createActiveEditBrief(overrides: Partial<EditBriefReadModel> = {}): EditBriefReadModel {
+  return {
+    id: "edit_brief_workspace_123_project_456_asset_abc",
+    versionId: "edit_brief_version_workspace_123_project_456_asset_abc_1",
+    workspaceId: "workspace_123",
+    projectId: "project_456",
+    userId: "user_789",
+    sourceAssetId: "asset_abc",
+    versionNumber: 1,
+    settings: createEditBriefSettings(),
+    ...overrides,
+  };
+}
+
+function createEditBriefSettings(): EditBriefSettings {
+  return {
+    schemaVersion: "content_ops.edit_brief.v1",
+    goal: "Create a punchy launch clip.",
+    tone: "funny",
+    pacing: "fast",
+    targetPlatforms: ["tiktok", "linkedin"],
+    include: [
+      {
+        label: "dashboard reveal",
+      },
+    ],
+    exclude: [
+      {
+        label: "rambling intro",
+      },
+    ],
+    clipLengthSeconds: {
+      min: 30,
+      max: 45,
+    },
+    captionStyle: {
+      preset: "bold",
+      density: "medium",
+      emoji: false,
+    },
+    cropStrategy: "speaker_focus",
+    music: {
+      mood: "upbeat",
+      allowLicensed: false,
+    },
+    editorialRules: ["Open on the strongest demo moment."],
+  };
+}

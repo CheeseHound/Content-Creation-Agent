@@ -1,4 +1,9 @@
 import type { ApiErrorDetail } from "../api-response";
+import type {
+  ActiveEditBriefLookupRequest,
+  EditBriefReadModel,
+  EditBriefSettings,
+} from "../edit-briefs/types";
 
 export const RENDER_JOB_STATUSES = [
   "created",
@@ -51,6 +56,14 @@ export interface CreateRenderJobBody {
   templateParameters: RenderTemplateParameters;
   styleOptions: RenderStyleOptions;
   captionTimeline: RenderCaptionCue[];
+  editBrief?: RenderEditBriefReference;
+}
+
+export interface RenderEditBriefReference {
+  id: string;
+  versionId: string;
+  versionNumber: number;
+  settings: EditBriefSettings;
 }
 
 export type RenderTemplateParameterValue = string | number | boolean;
@@ -131,6 +144,28 @@ export interface QueueJobPayload {
       video_codec: "h264";
       audio_codec: "aac";
     };
+    edit_brief?: {
+      id: string;
+      version_id: string;
+      version_number: number;
+      settings: {
+        schema_version: "content_ops.edit_brief.v1";
+        goal: string;
+        tone: EditBriefSettings["tone"];
+        pacing: EditBriefSettings["pacing"];
+        target_platforms: EditBriefSettings["targetPlatforms"];
+        include: EditBriefSettings["include"];
+        exclude: EditBriefSettings["exclude"];
+        clip_length_seconds: EditBriefSettings["clipLengthSeconds"];
+        caption_style: EditBriefSettings["captionStyle"];
+        crop_strategy: EditBriefSettings["cropStrategy"];
+        music: {
+          mood: EditBriefSettings["music"]["mood"];
+          allow_licensed: boolean;
+        };
+        editorial_rules: EditBriefSettings["editorialRules"];
+      };
+    };
   };
 }
 
@@ -199,6 +234,10 @@ export interface RenderJobRepository {
   getRenderJobById(id: string): Promise<RenderJobRecord | undefined>;
 }
 
+export interface ActiveEditBriefRepository {
+  getActiveEditBrief(request: ActiveEditBriefLookupRequest): Promise<EditBriefReadModel | undefined>;
+}
+
 export interface RenderQueue {
   enqueue(job: QueueJob): Promise<void>;
 }
@@ -217,6 +256,7 @@ export interface DownloadSigner {
 export interface CreateRenderJobDependencies {
   repository: RenderJobRepository;
   queue: RenderQueue;
+  activeEditBriefRepository?: ActiveEditBriefRepository;
   outputSigner?: DownloadSigner;
   now?: () => Date;
   outputDownloadTtlSeconds?: number;

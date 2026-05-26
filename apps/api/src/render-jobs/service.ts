@@ -3,11 +3,13 @@ import type {
   CreateRenderJobBody,
   CreateRenderJobDependencies,
   CreateRenderJobResult,
+  RenderEditBriefReference,
   RenderJobRecord,
   RenderJobReadModel,
   RenderOutputAsset,
   RenderWorkflowPlan,
 } from "./types";
+import { validateRenderEditBriefReference } from "./validation";
 
 export const DEFAULT_OUTPUT_DOWNLOAD_TTL_SECONDS = 15 * 60;
 
@@ -23,16 +25,27 @@ export class RenderJobPlanRejectedError extends Error {
   }
 }
 
+export class RenderJobActiveEditBriefRejectedError extends Error {
+  readonly details: ReturnType<typeof validateRenderEditBriefReference>;
+
+  constructor(details: ReturnType<typeof validateRenderEditBriefReference>) {
+    super("Active edit brief settings are invalid.");
+    this.name = "RenderJobActiveEditBriefRejectedError";
+    this.details = details;
+  }
+}
+
 export async function createRenderJob(
   request: CreateRenderJobBody,
   dependencies: CreateRenderJobDependencies,
 ): Promise<CreateRenderJobResult> {
+  const resolvedRequest = await resolveEditBriefForRender(request, dependencies);
   const [subscription, usage] = await Promise.all([
-    dependencies.repository.getWorkspaceSubscription(request.workspaceId),
-    dependencies.repository.getUsageSnapshot(request.workspaceId),
+    dependencies.repository.getWorkspaceSubscription(resolvedRequest.workspaceId),
+    dependencies.repository.getUsageSnapshot(resolvedRequest.workspaceId),
   ]);
   const plan = planRenderWorkflow({
-    request,
+    request: resolvedRequest,
     tier: subscription.tier,
     usage,
   });
@@ -42,11 +55,11 @@ export async function createRenderJob(
   }
 
   const renderJob: RenderJobRecord = {
-    id: buildRenderJobId(request),
-    workspaceId: request.workspaceId,
-    projectId: request.projectId,
-    userId: request.userId,
-    sourceAssetId: request.sourceAssetId,
+    id: buildRenderJobId(resolvedRequest),
+    workspaceId: resolvedRequest.workspaceId,
+    projectId: resolvedRequest.projectId,
+    userId: resolvedRequest.userId,
+    sourceAssetId: resolvedRequest.sourceAssetId,
     status: plan.nextStatus,
     estimatedRenderMinutes: plan.estimatedRenderMinutes,
     storageKeys: plan.storageKeys,
@@ -60,6 +73,48 @@ export async function createRenderJob(
     renderJob: createdRenderJob,
     queueJob: plan.queueJob,
   };
+}
+
+async function resolveEditBriefForRender(
+  request: CreateRenderJobBody,
+  dependencies: CreateRenderJobDependencies,
+): Promise<CreateRenderJobBody> {
+  if (request.editBrief) {
+    validateResolvedEditBrief(request.editBrief);
+    return request;
+  }
+
+  const activeEditBrief = await dependencies.activeEditBriefRepository?.getActiveEditBrief({
+    workspaceId: request.workspaceId,
+    projectId: request.projectId,
+    sourceAssetId: request.sourceAssetId,
+  });
+
+  if (!activeEditBrief) {
+    return request;
+  }
+
+  const editBrief: RenderEditBriefReference = {
+    id: activeEditBrief.id,
+    versionId: activeEditBrief.versionId,
+    versionNumber: activeEditBrief.versionNumber,
+    settings: activeEditBrief.settings,
+  };
+
+  validateResolvedEditBrief(editBrief);
+
+  return {
+    ...request,
+    editBrief,
+  };
+}
+
+function validateResolvedEditBrief(editBrief: RenderEditBriefReference): void {
+  const details = validateRenderEditBriefReference(editBrief);
+
+  if (details.length > 0) {
+    throw new RenderJobActiveEditBriefRejectedError(details);
+  }
 }
 
 export async function getRenderJobById(

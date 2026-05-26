@@ -1,7 +1,7 @@
 import type {
   RenderWorkerClaim,
   RenderWorkerRepository,
-} from "./mock-hyperframes-worker";
+} from "./render-worker-types";
 import type { QueueJobPayload, RenderOutputManifest } from "./payload";
 
 export interface PostgresQueryResult<TRow> {

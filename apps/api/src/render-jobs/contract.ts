@@ -4,6 +4,7 @@ import type {
   CreateRenderJobBody,
   MediaStorageKeys,
   PlanEntitlement,
+  QueueJobPayload,
   QueueJob,
   RenderJobStatus,
   RenderWorkflowPlan,
@@ -168,6 +169,7 @@ export function planRenderWorkflow({
           video_codec: "h264",
           audio_codec: "aac",
         },
+        ...(request.editBrief ? { edit_brief: toQueueEditBrief(request.editBrief) } : {}),
       },
     },
   };
@@ -233,17 +235,45 @@ function buildIdempotencyKey(request: CreateRenderJobBody): string {
 
 export function buildRenderIntentFingerprint(request: Pick<
   CreateRenderJobBody,
-  "templateVariant" | "templateParameters" | "styleOptions" | "captionTimeline"
+  "templateVariant" | "templateParameters" | "styleOptions" | "captionTimeline" | "editBrief"
 >): string {
   return createHash("sha256")
     .update(stableStringify({
       captionTimeline: request.captionTimeline,
+      editBrief: request.editBrief,
       styleOptions: request.styleOptions,
       templateParameters: request.templateParameters,
       templateVariant: request.templateVariant,
     }))
     .digest("hex")
     .slice(0, 12);
+}
+
+function toQueueEditBrief(editBrief: NonNullable<CreateRenderJobBody["editBrief"]>): NonNullable<
+  QueueJobPayload["render"]["edit_brief"]
+> {
+  return {
+    id: editBrief.id,
+    version_id: editBrief.versionId,
+    version_number: editBrief.versionNumber,
+    settings: {
+      schema_version: editBrief.settings.schemaVersion,
+      goal: editBrief.settings.goal,
+      tone: editBrief.settings.tone,
+      pacing: editBrief.settings.pacing,
+      target_platforms: normalizedPlatforms(editBrief.settings.targetPlatforms) as typeof editBrief.settings.targetPlatforms,
+      include: editBrief.settings.include,
+      exclude: editBrief.settings.exclude,
+      clip_length_seconds: editBrief.settings.clipLengthSeconds,
+      caption_style: editBrief.settings.captionStyle,
+      crop_strategy: editBrief.settings.cropStrategy,
+      music: {
+        mood: editBrief.settings.music.mood,
+        allow_licensed: editBrief.settings.music.allowLicensed,
+      },
+      editorial_rules: editBrief.settings.editorialRules,
+    },
+  };
 }
 
 function slugifyFilename(value: string): string {

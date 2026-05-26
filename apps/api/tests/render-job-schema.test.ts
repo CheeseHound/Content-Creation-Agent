@@ -98,6 +98,39 @@ describe("content_ops.render_job.v1 schema", () => {
 
     assert.equal(validate(payloadWithCredential), false);
   });
+
+  it("validates render payloads with structured edit brief settings", () => {
+    const validate = loadRenderJobSchemaValidator();
+    const plan = planRenderWorkflow({
+      request: {
+        ...VALID_REQUEST,
+        editBrief: {
+          id: "edit_brief_workspace_123_project_456_asset_abc",
+          versionId: "edit_brief_version_workspace_123_project_456_asset_abc_1",
+          versionNumber: 1,
+          settings: {
+            schemaVersion: "content_ops.edit_brief.v1",
+            goal: "Create a punchy launch clip.",
+            tone: "funny",
+            pacing: "fast",
+            targetPlatforms: ["tiktok", "linkedin"],
+            include: [{ label: "dashboard reveal" }],
+            exclude: [{ label: "rambling intro" }],
+            clipLengthSeconds: { min: 30, max: 45 },
+            captionStyle: { preset: "bold", density: "medium", emoji: false },
+            cropStrategy: "speaker_focus",
+            music: { mood: "upbeat", allowLicensed: false },
+            editorialRules: ["Open on the strongest demo moment."],
+          },
+        },
+      },
+      tier: "creator",
+      usage: { activeRenderJobs: 1, renderedMinutesThisPeriod: 24 },
+    });
+
+    assert.ok(plan.queueJob);
+    assert.equal(validate(plan.queueJob.payload), true, JSON.stringify(validate.errors));
+  });
 });
 
 function loadRenderJobSchemaValidator() {

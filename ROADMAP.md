@@ -1,6 +1,6 @@
 # Shortform Content Ops SaaS Roadmap
 
-Last updated: 2026-05-25
+Last updated: 2026-05-27
 
 ## Product Direction
 
@@ -9,10 +9,22 @@ operations: upload/import video, transcribe it, identify clip opportunities,
 render vertical clips with overlays, store outputs, and gate usage by Stripe
 subscription tier.
 
+After upload, users should be able to describe the edit they want in a focused
+edit brief chat: desired tone, pacing, platforms, moments to include, moments to
+exclude, caption style, crop style, music mood, and other creative constraints.
+That chat is not the runtime orchestrator. It converts natural-language intent
+into a validated structured edit brief that deterministic workers use for clip
+scoring, edit planning, quality checks, and rendering.
+
 The original workflow remains the source of truth. Content-specific editing
 styles are handled by a content style intelligence layer that adapts analysis,
 clip ranking, titles, captions, overlays, and dashboard suggestions by creator
 niche without making the runtime depend on an agent skill file.
+
+LangGraph and LangChain are intentionally out of scope for the core product
+architecture. The production backbone should remain a custom Postgres-backed
+state machine with BullMQ workers, durable artifacts, and explicit retries.
+Hyperframes is the composition/rendering layer, not the editing-quality brain.
 
 ## Architecture Target
 
@@ -25,6 +37,10 @@ niche without making the runtime depend on an agent skill file.
   Chrome/Chromium, bundled with FFmpeg for Hyperframes frame-to-MP4
   compilation.
 - Transcription: OpenAI audio transcription API
+- Edit intent: Website edit brief chat that produces a structured, versioned
+  edit brief contract for workers.
+- Orchestration: Custom Postgres state machine plus BullMQ worker queues. Do
+  not introduce LangGraph or LangChain for the core job lifecycle.
 - Billing: Stripe subscriptions and webhooks
 
 ## Current State
@@ -36,6 +52,28 @@ niche without making the runtime depend on an agent skill file.
 - Product architecture now includes a content style intelligence layer for
   vlogs, gaming and stream clips, tutorials and product demos, podcasts and
   talking-head commentary, and fitness/health/wellness content.
+- Product direction now includes an edit brief chat after upload. The chat
+  should turn user requests like "make it funny and fast-paced, keep the demo,
+  remove the rambling intro" into a structured settings contract that drives
+  scoring, edit planning, QC, and rendering.
+- The API now has a deterministic edit brief contract behind
+  `POST /api/edit-briefs`. If the user leaves the chat box empty, the contract
+  applies default tweakable settings for goal, tone, pacing, platforms, clip
+  length, caption style, crop strategy, music, and editorial rules.
+- `POST /api/edit-briefs` now also accepts a nonblank `chatMessage` and maps
+  common editing language into structured settings without making workers
+  depend on raw prompt text.
+- Render job payloads can now carry an optional structured `edit_brief` object
+  with the active brief version and settings for downstream clip scoring and
+  render planning.
+- Render-job creation now automatically looks up the active persisted edit
+  brief for the workspace/project/source asset when callers omit `editBrief`,
+  while preserving explicit structured `editBrief` overrides.
+- The first edit planning contract now exists under `apps/api/src/edit-planning`
+  and turns clip candidates plus `content_ops.edit_brief.v1` settings into a
+  deterministic `content_ops.edit_decision_list.v1` decision list.
+- Architecture decision: keep the custom state-machine and queue-worker design;
+  do not use LangGraph or LangChain as the core orchestrator.
 - Production SaaS contract has been started in
   `src/llm/content_ops/platform.py`.
 - Architecture notes live in
@@ -45,8 +83,20 @@ niche without making the runtime depend on an agent skill file.
   refreshed whenever a next-chat handoff prompt is written.
 - First dated handoff prompt has been saved at
   `dev-log/2026-05-21-next-chat-prompt.md`.
-- Latest next-chat handoff for the worker smoke test is saved at
-  `dev-log/2026-05-25-next-chat-hyperframes-worker-smoke.md`.
+- Latest next-chat handoff for the real-render smoke and worker storage
+  adapter is saved at
+  `dev-log/2026-05-25-next-chat-real-render-smoke-and-storage.md`.
+- Latest worker storage progress is saved at
+  `dev-log/2026-05-25-worker-s3-storage-progress.md`.
+- Latest edit brief contract progress is saved at
+  `dev-log/2026-05-26-edit-brief-contract-progress.md`.
+- Latest edit brief chat/render wiring progress is saved at
+  `dev-log/2026-05-26-edit-brief-chat-render-wiring-progress.md`.
+- Latest next-chat handoff for active edit brief lookup and planning contract
+  work is saved at
+  `dev-log/2026-05-27-next-chat-active-edit-brief-lookup.md`.
+- Latest active edit brief lookup and planning contract progress is saved at
+  `dev-log/2026-05-27-active-edit-brief-lookup-planning-progress.md`.
 - Local API-to-worker Hyperframes smoke results are saved at
   `dev-log/2026-05-25-hyperframes-api-worker-smoke-results.md`.
 - Backend API MVP has started under `apps/api` with a TypeScript render-job
@@ -91,6 +141,13 @@ niche without making the runtime depend on an agent skill file.
   scoped workspace manifests under `/tmp/content-ops-worker-smoke`, and
   advanced Postgres status from `render_queued` to `rendering` to `ready`
   without leaking configured dummy secrets.
+- The worker now has an opt-in first real render slice:
+  `CONTENT_OPS_WORKER_MODE=real` downloads source assets through a storage
+  boundary, invokes a Hyperframes render runner boundary, uploads generated
+  MP4 outputs through storage, and persists `render_jobs.output_manifest` only
+  after upload succeeds. Local filesystem storage supports no-paid-service
+  tests and smoke runs, and the opt-in S3-compatible worker adapter downloads
+  and uploads objects using worker runtime credentials.
 
 ## Phase 1: Domain And Workflow Contract
 
@@ -108,6 +165,10 @@ Completed:
 - Add reusable HTML/CSS template variants, template input parameters,
   structured JSON caption timelines, source asset references, and Hyperframes
   output settings to `schemas/content-ops-render-job-v1.schema.json`.
+- Add stable JSON schema for `content_ops.edit_brief.v1` with defaultable user
+  intent settings that can be produced by chat or adjusted manually.
+- Extend `content_ops.render_job.v1` so workers can receive the active
+  structured edit brief settings without raw chat text or credentials.
 - Add tests for quota gates, queue payloads, storage keys, and state
   transitions.
 
@@ -149,6 +210,18 @@ Completed:
   checks, deterministic source object keys, media asset persistence, and a
   signed PUT upload target.
 - Add signed download/output URL support for completed render jobs.
+- Add `POST /api/edit-briefs` with request validation, deterministic default
+  settings for empty chat intent, structured edit brief normalization, and
+  append-only version creation.
+- Add deterministic chat-message extraction for common tone, pacing, platform,
+  include/exclude, clip-length, caption, crop, and music language.
+- Add optional structured edit brief settings to render-job validation and
+  worker queue payloads.
+- Add active edit brief lookup during render-job creation, with explicit
+  request-level `editBrief` overrides preserved and invalid persisted settings
+  rejected before enqueue.
+- Add `edit_briefs` and `edit_brief_versions` persistence with active-version
+  tracking and idempotent version writes.
 - Add API-side Hyperframes render-job validation so template variants, styling
   parameters, source asset references, and structured caption timelines pass
   through to the worker without exposing secrets.
@@ -187,13 +260,24 @@ Completed:
 - Live local API-to-worker smoke through Redis/BullMQ and Postgres, including
   verified `render_queued` to `rendering` to `ready` status transitions and
   mock Hyperframes workspace manifest writing.
+- Worker-side render storage interface with a local filesystem implementation
+  for deterministic source downloads and output uploads in tests/smokes.
+- First real worker render path behind `CONTENT_OPS_WORKER_MODE=real` that
+  downloads source assets, writes a scoped Hyperframes workspace manifest,
+  invokes the render runner boundary, uploads MP4 outputs, and persists a real
+  output manifest only after upload succeeds.
+- S3-compatible worker storage adapter behind
+  `CONTENT_OPS_WORKER_STORAGE_MODE=s3` for Cloudflare R2/AWS-style object
+  download/upload using worker runtime credentials.
+- Fixture Hyperframes command-runner smoke test that executes the configured
+  command boundary and discovers generated MP4 outputs.
 
 Remaining:
 
-- Worker download/upload helpers for pulling source assets and writing final
-  render outputs.
 - Local headless browser smoke path for executing frame-by-frame rendering
   tests against representative Hyperframes templates.
+- Live local real-render smoke through Redis/Postgres plus local fake storage.
+- Live R2/S3-compatible worker storage smoke against configured object storage.
 - Usage ledger finalization when real MP4 rendering starts producing billable
   output minutes.
 
@@ -215,6 +299,8 @@ Build:
 - R2/S3 signed upload and signed download support.
 - Worker download/upload helpers for raw source assets, Hyperframes workspace
   assets, and rendered outputs.
+- Live object-storage smoke coverage for API signed uploads/downloads and
+  worker S3-compatible direct object transfer.
 - FFmpeg audio extraction in worker runtime.
 - OpenAI transcription integration.
 - Transcript persistence.
@@ -229,12 +315,32 @@ Acceptance:
 - Queue payloads contain storage keys, not storage credentials.
 - Transcription failures are recoverable and visible in job status.
 
-## Phase 5: Content Style Intelligence
+## Phase 5: Edit Brief And Content Style Intelligence
 
-Status: Planned
+Status: In progress
 
 Build:
 
+- Edit brief contract for user intent, including goal, tone, pacing, target
+  platforms, include/exclude constraints, clip length range, caption style, crop
+  strategy, music mood, and editorial rules. Initial backend contract
+  implemented for API intake and schema validation.
+- Default settings path for an empty chat box so users can immediately tweak or
+  keep defaults before clip scoring starts. Initial backend defaults
+  implemented.
+- `edit_briefs` and `edit_brief_versions` persistence so user revisions can
+  rerun scoring and planning without re-uploading or re-transcribing source
+  media. Initial append-only versioning implemented.
+- Initial `edit_decision_lists` persistence table for downstream clip planning
+  output. `edit_constraints` remains pending.
+- Initial pure edit planning function that maps transcript/clip candidates and
+  active edit brief settings into deterministic include/exclude/ranking hints.
+- Website chat endpoint that converts user messages into structured edit brief
+  settings with schema validation and safe fallbacks. Initial deterministic
+  extraction implemented in `POST /api/edit-briefs`; richer LLM-backed
+  extraction remains behind the same schema.
+- Manual settings panel that exposes the extracted brief for review and edits
+  before workers generate clips.
 - Content profile contract for `vlog`, `gaming`, `stream_clip`, `tutorial`,
   `product_demo`, `podcast`, `talking_head`, `fitness`, `health`, and
   `news_commentary`.
@@ -246,11 +352,22 @@ Build:
   calendar opportunities.
 - Brand/profile settings for tone, caption style, logo, colors, preferred calls
   to action, and blocked phrases.
+- Clip scoring that combines transcript alignment, visual/audio signals,
+  content profile rules, and the active edit brief instead of relying on
+  Hyperframes for editing quality. Initial render payload wiring and a narrow
+  edit decision list planner are implemented; full scoring is still pending.
+- QC rules for bad crops, missing captions, clipped words, dead air, black
+  frames, frozen frames, unreadable captions, and audio drift before final
+  render.
 - Health and wellness guardrails that flag risky or unsupported claims instead
   of producing definitive medical advice.
 
 Acceptance:
 
+- A user can describe the edit they want in chat and receive a validated,
+  editable settings contract.
+- Editing brief revisions create new versions and can rerun clip scoring
+  without duplicating uploads or transcription work.
 - A transcribed project produces ranked clip candidates with visible reasons.
 - Users can override the detected content profile before rendering.
 - Dashboard suggestions are stored and returned separately from render outputs.
@@ -315,6 +432,9 @@ Build:
 - Next.js dashboard scaffold.
 - Project list and project detail views.
 - Upload flow using signed URLs.
+- Post-upload edit brief chat for natural-language editing direction.
+- Extracted settings panel for tone, pacing, include/exclude rules, platforms,
+  clip length, captions, crop strategy, music mood, and editorial rules.
 - Render job creation form.
 - Template selection and styling controls for fonts, brand colors, caption
   style, and overlay positioning, passed directly into the Hyperframes payload
@@ -331,8 +451,9 @@ Build:
 
 Acceptance:
 
-- A user can upload a video, review recommended clips and suggestions, start a
-  render, watch status, and download output.
+- A user can upload a video, describe the edit they want, review/edit extracted
+  settings, review recommended clips and suggestions, start a render, watch
+  status, and download output.
 - Empty, loading, failed, and quota-exceeded states are handled clearly.
 
 ## Current Blockers
@@ -343,11 +464,16 @@ Acceptance:
 
 ## Recommended Next Step
 
-Replace the mock worker ready path with the first real render slice: download
-source assets into the scoped worker workspace, execute a representative
-Hyperframes browser composition locally, run FFmpeg MP4 generation, upload
-outputs through the storage boundary, persist a real output manifest, and only
-then finalize billable usage.
+Continue the edit brief slice by adding persistence/repository support around
+`content_ops.edit_decision_list.v1`, then connect transcript-derived clip
+candidates to the planner. Keep the core orchestration custom with
+Postgres/BullMQ workers and do not introduce LangGraph or LangChain.
+
+After the planning repository path is in place, continue the real-render smoke
+path: download source assets into the scoped worker workspace, execute a
+representative Hyperframes browser composition locally, run FFmpeg MP4
+generation, upload outputs through the storage boundary, persist a real output
+manifest, and only then finalize billable usage.
 
 Before coding, inspect `DEVLOGS.md`, `ROADMAP.md`, and the latest dated file in
 `dev-log/`.

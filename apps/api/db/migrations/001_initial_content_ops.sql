@@ -66,6 +66,54 @@ create table if not exists media_assets (
 create index if not exists media_assets_project_idx
   on media_assets (project_id);
 
+create table if not exists edit_briefs (
+  id text primary key,
+  workspace_id text not null references workspaces(id) on delete cascade,
+  project_id text not null references projects(id) on delete cascade,
+  user_id text not null references users(id),
+  source_asset_id text references media_assets(id),
+  active_version_number integer not null default 0 check (active_version_number >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists edit_briefs_project_idx
+  on edit_briefs (project_id, updated_at desc);
+
+create table if not exists edit_brief_versions (
+  id text primary key,
+  edit_brief_id text not null references edit_briefs(id) on delete cascade,
+  workspace_id text not null references workspaces(id) on delete cascade,
+  project_id text not null references projects(id) on delete cascade,
+  user_id text not null references users(id),
+  source_asset_id text references media_assets(id),
+  version_number integer not null check (version_number > 0),
+  schema_version text not null check (schema_version = 'content_ops.edit_brief.v1'),
+  settings jsonb not null,
+  idempotency_key text not null unique,
+  created_at timestamptz not null default now(),
+  unique (edit_brief_id, version_number)
+);
+
+create index if not exists edit_brief_versions_brief_created_idx
+  on edit_brief_versions (edit_brief_id, created_at desc);
+
+create table if not exists edit_decision_lists (
+  id text primary key,
+  workspace_id text not null references workspaces(id) on delete cascade,
+  project_id text not null references projects(id) on delete cascade,
+  source_asset_id text not null references media_assets(id),
+  edit_brief_id text not null references edit_briefs(id) on delete cascade,
+  edit_brief_version_id text not null references edit_brief_versions(id) on delete cascade,
+  schema_version text not null check (schema_version = 'content_ops.edit_decision_list.v1'),
+  decision_list jsonb not null,
+  idempotency_key text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists edit_decision_lists_project_created_idx
+  on edit_decision_lists (project_id, created_at desc);
+
 create table if not exists render_jobs (
   id text primary key,
   workspace_id text not null references workspaces(id) on delete cascade,
