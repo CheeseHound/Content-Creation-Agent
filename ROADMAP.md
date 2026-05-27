@@ -104,6 +104,8 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
 - Latest observability health/readiness and analytics contract progress is
   saved at
   `dev-log/2026-05-27-observability-health-analytics-progress.md`.
+- Latest admin analytics read model progress is saved at
+  `dev-log/2026-05-27-admin-analytics-read-model-progress.md`.
 - Local API-to-worker Hyperframes smoke results are saved at
   `dev-log/2026-05-25-hyperframes-api-worker-smoke-results.md`.
 - Backend API MVP has started under `apps/api` with a TypeScript render-job
@@ -167,6 +169,11 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
 - A product analytics event contract now defines the initial funnel event names
   and filters analytics metadata so raw prompts, raw transcripts, storage
   keys, credentials, and raw customer media fields are not sent to sinks.
+- The API now has a protected internal admin analytics summary endpoint behind
+  `CONTENT_OPS_ADMIN_TOKEN`. `GET /internal/admin/analytics/summary` returns
+  bounded aggregate read models for workspace usage, uploads, edit brief and
+  decision list activity, render status/failures, and usage minutes without
+  raw database dumps, signed URLs, or storage keys.
 
 ## Phase 1: Domain And Workflow Contract
 
@@ -330,9 +337,6 @@ Completed:
 - Provider-agnostic analytics sink boundary with safe metadata filtering so
   prompts, transcripts, credentials, storage keys, and raw customer media data
   are not sent to analytics sinks.
-
-Remaining:
-
 - Internal admin analytics read models over Postgres:
   upload volume, edit brief creation, render job status counts, render success
   rate, failure code distribution, queue latency, render duration, storage
@@ -342,17 +346,26 @@ Remaining:
   - render funnel summary
   - render failure summary
   - edit brief and decision list activity
+  - usage ledger summary
+- Internal admin API surface protected behind a dedicated admin authorization
+  boundary:
+  - no raw database dumps
+  - no customer secrets
+  - no signed storage URLs
+  - bounded date ranges and workspace filters.
+
+Remaining:
+
+- Admin analytics read model follow-ups:
+  - queue latency
+  - render duration from persisted worker timestamps
+  - storage output counts from output manifests
   - billing and usage ledger reconciliation
 - Provider-agnostic analytics sink boundary:
   no-op/local sink for tests and PostHog-compatible event sink for production.
 - Slow-query and index guidance hooks where the Postgres provider exposes
   them.
-- Internal admin API surface protected behind a dedicated admin authorization
-  boundary:
-  - no raw database dumps
-  - no customer secrets
-  - no signed storage URLs except support-specific audited actions
-  - pagination, bounded date ranges, and workspace filters.
+- Support-specific audited actions for any future signed storage URL access.
 - Dashboard integration plan for:
   - Postgres provider dashboard or Performance Insights for database health
   - Grafana/Datadog for service and worker metrics

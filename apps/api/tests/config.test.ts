@@ -27,6 +27,9 @@ describe("loadApiConfig", () => {
         openAiApiKey: "sk-openai-local",
         model: "gpt-4o-mini-transcribe",
       },
+      admin: {
+        token: "local-admin-token-123",
+      },
       storage: {
         bucket: "content-ops-dev",
         region: "auto",
@@ -95,6 +98,24 @@ describe("loadApiConfig", () => {
         OPENAI_TRANSCRIPTION_MODEL: undefined,
       }),
       /OPENAI_TRANSCRIPTION_MODEL must be configured/,
+    );
+  });
+
+  it("fails fast when admin token settings are missing or too weak", () => {
+    assert.throws(
+      () => loadApiConfig({
+        ...VALID_ENV,
+        CONTENT_OPS_ADMIN_TOKEN: undefined,
+      }),
+      /CONTENT_OPS_ADMIN_TOKEN must be configured/,
+    );
+
+    assert.throws(
+      () => loadApiConfig({
+        ...VALID_ENV,
+        CONTENT_OPS_ADMIN_TOKEN: "short",
+      }),
+      /CONTENT_OPS_ADMIN_TOKEN must be at least 16 characters/,
     );
   });
 
@@ -207,4 +228,5 @@ const VALID_ENV: NodeJS.ProcessEnv = {
   STRIPE_WEBHOOK_SECRET: "whsec_local",
   OPENAI_API_KEY: "sk-openai-local",
   OPENAI_TRANSCRIPTION_MODEL: "gpt-4o-mini-transcribe",
+  CONTENT_OPS_ADMIN_TOKEN: "local-admin-token-123",
 };

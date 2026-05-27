@@ -1,5 +1,12 @@
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 
+import { PostgresAdminAnalyticsRepository } from "./admin/analytics/postgres-repository";
+import { createAdminAnalyticsSummaryHandler } from "./admin/analytics/route";
+import type {
+  AdminAnalyticsDependencies,
+  AdminAnalyticsSummary,
+} from "./admin/analytics/types";
+import { createStaticAdminAuthorizer, type AdminAuthorizer } from "./admin/auth";
 import { apiError, type HttpResponse } from "./api-response";
 import { loadMigrations, runMigrations } from "./db/migrations";
 import {
@@ -53,6 +60,7 @@ export interface ApiServerDependencies
   extends CreateRenderJobDependencies,
     CreateUploadPresignDependencies,
     CreateEditBriefDependencies,
+    AdminAnalyticsDependencies,
     ObservabilityDependencies {}
 
 export interface ApiRuntimeDependencies extends ApiServerDependencies {
@@ -68,6 +76,7 @@ export interface CreatePostgresDependenciesOptions {
   migrationsDirectory?: string;
   queue?: RenderQueue & { close?: () => Promise<void> };
   signer?: UploadSigner & DownloadSigner;
+  adminToken: string;
   uploadTtlSeconds?: number;
   outputDownloadTtlSeconds?: number;
 }
@@ -77,6 +86,7 @@ export function createApiServer(dependencies: ApiServerDependencies): http.Serve
   const getRenderJobHandler = createGetRenderJobHandler(dependencies);
   const uploadPresignHandler = createUploadPresignHandler(dependencies);
   const editBriefHandler = createEditBriefHandler(dependencies);
+  const adminAnalyticsSummaryHandler = createAdminAnalyticsSummaryHandler(dependencies);
   const healthzHandler = createHealthzHandler(dependencies);
   const readyzHandler = createReadyzHandler(dependencies);
 
@@ -90,6 +100,15 @@ export function createApiServer(dependencies: ApiServerDependencies): http.Serve
 
     if (request.method === "GET" && url.pathname === "/readyz") {
       writeJson(response, await readyzHandler());
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/internal/admin/analytics/summary") {
+      const routeResponse = await adminAnalyticsSummaryHandler({
+        headers: normalizeHeaders(request.headers),
+        query: url.searchParams,
+      });
+      writeJson(response, routeResponse);
       return;
     }
 
@@ -133,6 +152,8 @@ export function createInMemoryDependencies(): ApiServerDependencies {
     repository,
     queue,
     databaseHealthRepository: repository,
+    adminAnalyticsRepository: repository,
+    adminAuthorizer: createStaticAdminAuthorizer("local-admin-token-123"),
     queueHealthCheck: resolveQueueHealthCheck(queue),
     storageHealthCheck: createConfiguredStorageHealthCheck("local"),
     outputSigner: new InMemoryDownloadSigner(),
@@ -152,6 +173,7 @@ export async function createPostgresDependencies({
   migrationsDirectory,
   queue: providedQueue,
   signer: providedSigner,
+  adminToken,
   uploadTtlSeconds,
   outputDownloadTtlSeconds,
 }: CreatePostgresDependenciesOptions): Promise<ApiRuntimeDependencies> {
@@ -182,11 +204,14 @@ export async function createPostgresDependencies({
 
   const editBriefRepository = new PostgresEditBriefRepository(client);
   const observabilityRepository = new PostgresObservabilityRepository(client);
+  const adminAnalyticsRepository = new PostgresAdminAnalyticsRepository(client);
 
   return {
     repository: new PostgresRenderJobRepository(client),
     queue,
     databaseHealthRepository: observabilityRepository,
+    adminAnalyticsRepository,
+    adminAuthorizer: createStaticAdminAuthorizer(adminToken),
     queueHealthCheck: resolveQueueHealthCheck(queue),
     storageHealthCheck: createConfiguredStorageHealthCheck("s3_compatible"),
     outputSigner: signer,
@@ -233,6 +258,13 @@ function writeJson<TData>(response: ServerResponse, routeResponse: HttpResponse<
   response.end(JSON.stringify(routeResponse.body));
 }
 
+function normalizeHeaders(headers: IncomingMessage["headers"]): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(headers).map(([name, value]) => [
+    name.toLowerCase(),
+    Array.isArray(value) ? value.join(",") : value,
+  ]));
+}
+
 class InMemoryRenderJobRepository implements RenderJobRepository {
   private readonly subscription: WorkspaceSubscription = { tier: "creator" };
   private readonly usage: UsageSnapshot = { activeRenderJobs: 0, renderedMinutesThisPeriod: 0 };
@@ -273,6 +305,74 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
           approximateRowCount: this.editBriefsById.size,
         },
       ],
+    };
+  }
+
+  async getSummary(request: {
+    workspaceId?: string;
+    start: Date;
+    end: Date;
+    generatedAt: Date;
+  }): Promise<AdminAnalyticsSummary> {
+    const jobs = [...this.jobsById.values()].filter((job) =>
+      !request.workspaceId || job.workspaceId === request.workspaceId,
+    );
+    const uploads = [...this.mediaAssetsById.values()].filter((asset) =>
+      !request.workspaceId || asset.workspaceId === request.workspaceId,
+    );
+
+    return {
+      generatedAt: request.generatedAt.toISOString(),
+      window: {
+        start: request.start.toISOString(),
+        end: request.end.toISOString(),
+      },
+      ...(request.workspaceId ? { workspaceId: request.workspaceId } : {}),
+      workspaces: {
+        total: request.workspaceId ? 1 : 0,
+        byTier: {
+          creator: request.workspaceId ? 1 : 0,
+          free: 0,
+          studio: 0,
+        },
+      },
+      uploads: {
+        count: uploads.length,
+        totalBytes: uploads.reduce((sum, asset) => sum + asset.sizeBytes, 0),
+      },
+      editBriefs: {
+        briefCount: this.editBriefsById.size,
+        versionCount: [...this.editBriefsById.values()]
+          .reduce((sum, versions) => sum + versions.length, 0),
+      },
+      decisionLists: {
+        count: 0,
+      },
+      renderJobs: {
+        total: jobs.length,
+        byStatus: {
+          canceled: jobs.filter((job) => job.status === "canceled").length,
+          created: jobs.filter((job) => job.status === "created").length,
+          failed: jobs.filter((job) => job.status === "failed").length,
+          ready: jobs.filter((job) => job.status === "ready").length,
+          render_queued: jobs.filter((job) => job.status === "render_queued").length,
+          rendering: jobs.filter((job) => job.status === "rendering").length,
+          transcribed: jobs.filter((job) => job.status === "transcribed").length,
+          transcribing: jobs.filter((job) => job.status === "transcribing").length,
+          uploaded: jobs.filter((job) => job.status === "uploaded").length,
+        },
+        successRate: jobs.length === 0
+          ? 0
+          : jobs.filter((job) => job.status === "ready").length / jobs.length,
+        estimatedRenderMinutes: jobs.reduce(
+          (sum, job) => sum + job.estimatedRenderMinutes,
+          0,
+        ),
+        failureCodes: [],
+      },
+      usage: {
+        renderMinutes: this.usage.renderedMinutesThisPeriod,
+      },
     };
   }
 

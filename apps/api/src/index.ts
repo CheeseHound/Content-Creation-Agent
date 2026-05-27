@@ -10,6 +10,7 @@ async function main(): Promise<void> {
     runMigrations: config.runDbMigrations,
     uploadTtlSeconds: config.uploadPresignTtlSeconds,
     outputDownloadTtlSeconds: config.outputDownloadTtlSeconds,
+    adminToken: config.admin.token,
   });
   const server = createApiServer(dependencies);
 

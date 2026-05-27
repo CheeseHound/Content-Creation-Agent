@@ -5,6 +5,7 @@ export interface ApiConfig {
   runDbMigrations: boolean;
   billing: BillingConfig;
   transcription: TranscriptionConfig;
+  admin: AdminConfig;
   storage: StorageConfig;
   uploadPresignTtlSeconds: number;
   outputDownloadTtlSeconds: number;
@@ -18,6 +19,10 @@ export interface BillingConfig {
 export interface TranscriptionConfig {
   openAiApiKey: string;
   model: string;
+}
+
+export interface AdminConfig {
+  token: string;
 }
 
 export interface StorageConfig {
@@ -48,6 +53,9 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     transcription: {
       openAiApiKey: requireText(env.OPENAI_API_KEY, "OPENAI_API_KEY"),
       model: requireModelId(env.OPENAI_TRANSCRIPTION_MODEL, "OPENAI_TRANSCRIPTION_MODEL"),
+    },
+    admin: {
+      token: requireAdminToken(env.CONTENT_OPS_ADMIN_TOKEN),
     },
     storage: {
       bucket: requireText(env.CONTENT_OPS_STORAGE_BUCKET, "CONTENT_OPS_STORAGE_BUCKET"),
@@ -172,6 +180,16 @@ function requireModelId(value: string | undefined, name: string): string {
   }
 
   return modelId;
+}
+
+function requireAdminToken(value: string | undefined): string {
+  const token = requireText(value, "CONTENT_OPS_ADMIN_TOKEN");
+
+  if (token.length < 16) {
+    throw new Error("CONTENT_OPS_ADMIN_TOKEN must be at least 16 characters.");
+  }
+
+  return token;
 }
 
 function parseOptionalUrl(value: string | undefined, name: string): string | undefined {
