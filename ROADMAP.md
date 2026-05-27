@@ -106,6 +106,8 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
   `dev-log/2026-05-27-observability-health-analytics-progress.md`.
 - Latest admin analytics read model progress is saved at
   `dev-log/2026-05-27-admin-analytics-read-model-progress.md`.
+- Latest operator observability runbook progress is saved at
+  `dev-log/2026-05-27-operator-observability-runbook-progress.md`.
 - Local API-to-worker Hyperframes smoke results are saved at
   `dev-log/2026-05-25-hyperframes-api-worker-smoke-results.md`.
 - Backend API MVP has started under `apps/api` with a TypeScript render-job
@@ -174,6 +176,10 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
   bounded aggregate read models for workspace usage, uploads, edit brief and
   decision list activity, render status/failures, and usage minutes without
   raw database dumps, signed URLs, or storage keys.
+- Operator-facing Phase 4 runbook documentation now lives at
+  `docs/business/shortform-content-ops-operator-runbook.md` and documents the
+  health endpoints, admin analytics summary, reserved product funnel events,
+  signal ownership, alert candidates, and secret/data handling rules.
 
 ## Phase 1: Domain And Workflow Contract
 
@@ -366,18 +372,8 @@ Remaining:
 - Slow-query and index guidance hooks where the Postgres provider exposes
   them.
 - Support-specific audited actions for any future signed storage URL access.
-- Dashboard integration plan for:
-  - Postgres provider dashboard or Performance Insights for database health
-  - Grafana/Datadog for service and worker metrics
-  - PostHog for product events
-  - Metabase/Retool for internal business/support views.
-- Alerting thresholds:
-  failed render rate, queue backlog age, worker retry spikes, Postgres
-  connection saturation, storage upload failures, Stripe webhook failures,
-  transcription failures, and usage-ledger reconciliation drift.
-- Documentation for where operators see each class of signal:
-  database health, worker health, product funnel, business usage, support
-  drill-downs, and incident response.
+- Implement alerting thresholds and provider integrations described in the
+  operator runbook.
 
 Acceptance:
 
