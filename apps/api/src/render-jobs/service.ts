@@ -1,3 +1,4 @@
+import { trackProductAnalyticsEventBestEffort } from "../analytics/product-events";
 import { buildRenderIntentFingerprint, normalizedPlatforms, planRenderWorkflow } from "./contract";
 import type {
   CreateRenderJobBody,
@@ -68,6 +69,26 @@ export async function createRenderJob(
   const createdRenderJob = await dependencies.repository.createRenderJob(renderJob);
 
   await dependencies.queue.enqueue(plan.queueJob);
+  await trackProductAnalyticsEventBestEffort({
+    sink: dependencies.analyticsSink,
+    eventName: "render_job_created",
+    workspaceId: createdRenderJob.workspaceId,
+    projectId: createdRenderJob.projectId,
+    userId: createdRenderJob.userId,
+    sourceAssetId: createdRenderJob.sourceAssetId,
+    renderJobId: createdRenderJob.id,
+    occurredAt: dependencies.now?.() ?? new Date(),
+    properties: {
+      activeRenderJobs: usage.activeRenderJobs,
+      clipCount: resolvedRequest.clipCount,
+      estimatedRenderMinutes: createdRenderJob.estimatedRenderMinutes,
+      hasEditBrief: resolvedRequest.editBrief !== undefined,
+      platformCount: normalizedPlatforms(resolvedRequest.platforms).length,
+      status: createdRenderJob.status,
+      templateVariant: resolvedRequest.templateVariant,
+      tier: subscription.tier,
+    },
+  });
 
   return {
     renderJob: createdRenderJob,

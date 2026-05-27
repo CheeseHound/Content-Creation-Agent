@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { createGetRenderJobHandler, createRenderJobHandler } from "../src/render-jobs/route";
+import type { ProductAnalyticsEventPayload, ProductAnalyticsSink } from "../src/analytics/types";
 import type { EditBriefReadModel, EditBriefSettings } from "../src/edit-briefs/types";
 import type {
   CreateRenderJobBody,
@@ -138,6 +139,50 @@ describe("POST /api/render-jobs", () => {
     assert.equal(dependencies.repository.createdJobs.length, 1);
     assert.equal(dependencies.queue.enqueuedJobs.length, 1);
     assert.doesNotMatch(JSON.stringify(response.body), /OPENAI_API_KEY|STRIPE_SECRET_KEY/);
+  });
+
+  it("emits a sanitized render_job_created analytics event after enqueueing", async () => {
+    const analyticsSink = new RecordingAnalyticsSink();
+    const dependencies = createDependencies({
+      subscription: { tier: "creator" },
+      usage: { activeRenderJobs: 1, renderedMinutesThisPeriod: 24 },
+      analyticsSink,
+    });
+    const handler = createRenderJobHandler(dependencies);
+
+    const response = await handler({ body: VALID_REQUEST });
+
+    assert.equal(response.status, 201);
+    assert.equal(response.body.success, true);
+    if (!response.body.success) {
+      assert.fail("Expected render job creation to succeed.");
+    }
+    assert.equal(dependencies.queue.enqueuedJobs.length, 1);
+    assert.deepEqual(analyticsSink.events, [
+      {
+        eventName: "render_job_created",
+        workspaceId: "workspace_123",
+        projectId: "project_456",
+        userId: "user_789",
+        sourceAssetId: "asset_abc",
+        renderJobId: response.body.data.renderJob.id,
+        occurredAt: "2026-05-22T12:00:00.000Z",
+        properties: {
+          activeRenderJobs: 1,
+          clipCount: 4,
+          estimatedRenderMinutes: 16,
+          hasEditBrief: false,
+          platformCount: 3,
+          status: "render_queued",
+          templateVariant: "bold-captions",
+          tier: "creator",
+        },
+      },
+    ]);
+    assert.doesNotMatch(
+      JSON.stringify(analyticsSink.events),
+      /Founder demo|captionTimeline|storage|source_key|workspaces\/workspace_123/i,
+    );
   });
 
   it("carries active edit brief settings into the worker payload without raw chat text", async () => {
@@ -385,9 +430,11 @@ describe("POST /api/render-jobs", () => {
   });
 
   it("rejects quota-exceeded requests before creating or enqueueing a job", async () => {
+    const analyticsSink = new RecordingAnalyticsSink();
     const dependencies = createDependencies({
       subscription: { tier: "creator" },
       usage: { activeRenderJobs: 0, renderedMinutesThisPeriod: 175 },
+      analyticsSink,
     });
     const handler = createRenderJobHandler(dependencies);
 
@@ -408,6 +455,7 @@ describe("POST /api/render-jobs", () => {
     assert.equal(response.body.error.message, "monthly render minute quota exceeded");
     assert.equal(dependencies.repository.createdJobs.length, 0);
     assert.equal(dependencies.queue.enqueuedJobs.length, 0);
+    assert.deepEqual(analyticsSink.events, []);
   });
 
   it("returns field-level validation errors for malformed requests", async () => {
@@ -665,11 +713,13 @@ function createDependencies({
   usage,
   outputSigner,
   activeEditBrief,
+  analyticsSink,
 }: {
   subscription: WorkspaceSubscription;
   usage: UsageSnapshot;
   outputSigner?: DownloadSigner;
   activeEditBrief?: EditBriefReadModel;
+  analyticsSink?: ProductAnalyticsSink;
 }) {
   const repository = new InMemoryRenderJobRepository(subscription, usage, activeEditBrief);
   const queue = new InMemoryRenderQueue();
@@ -679,6 +729,7 @@ function createDependencies({
     activeEditBriefRepository: repository,
     outputSigner,
     now: () => new Date("2026-05-22T12:00:00.000Z"),
+    analyticsSink,
   };
 }
 
@@ -743,6 +794,14 @@ class FakeDownloadSigner implements DownloadSigner {
       headers: {},
       expiresAt: request.expiresAt.toISOString(),
     };
+  }
+}
+
+class RecordingAnalyticsSink implements ProductAnalyticsSink {
+  events: readonly ProductAnalyticsEventPayload[] = [];
+
+  async track(event: ProductAnalyticsEventPayload): Promise<void> {
+    this.events = [...this.events, event];
   }
 }
 

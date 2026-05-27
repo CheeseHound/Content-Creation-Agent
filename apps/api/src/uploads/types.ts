@@ -1,3 +1,4 @@
+import type { ProductAnalyticsSink } from "../analytics/types";
 import type { ValidationResult, WorkspaceSubscription } from "../render-jobs/types";
 
 export interface CreateUploadPresignBody {
@@ -62,6 +63,7 @@ export interface UploadRepository {
 export interface CreateUploadPresignDependencies {
   uploadRepository: UploadRepository;
   signer: UploadSigner;
+  analyticsSink?: ProductAnalyticsSink;
   createAssetId?: () => string;
   now?: () => Date;
   uploadTtlSeconds?: number;

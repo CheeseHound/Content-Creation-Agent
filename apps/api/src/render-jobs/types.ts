@@ -1,3 +1,4 @@
+import type { ProductAnalyticsSink } from "../analytics/types";
 import type { ApiErrorDetail } from "../api-response";
 import type {
   ActiveEditBriefLookupRequest,
@@ -256,6 +257,7 @@ export interface DownloadSigner {
 export interface CreateRenderJobDependencies {
   repository: RenderJobRepository;
   queue: RenderQueue;
+  analyticsSink?: ProductAnalyticsSink;
   activeEditBriefRepository?: ActiveEditBriefRepository;
   outputSigner?: DownloadSigner;
   now?: () => Date;

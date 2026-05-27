@@ -108,6 +108,8 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
   `dev-log/2026-05-27-admin-analytics-read-model-progress.md`.
 - Latest operator observability runbook progress is saved at
   `dev-log/2026-05-27-operator-observability-runbook-progress.md`.
+- Latest API product analytics event wiring progress is saved at
+  `dev-log/2026-05-27-product-analytics-api-events-progress.md`.
 - Local API-to-worker Hyperframes smoke results are saved at
   `dev-log/2026-05-25-hyperframes-api-worker-smoke-results.md`.
 - Backend API MVP has started under `apps/api` with a TypeScript render-job
@@ -343,6 +345,12 @@ Completed:
 - Provider-agnostic analytics sink boundary with safe metadata filtering so
   prompts, transcripts, credentials, storage keys, and raw customer media data
   are not sent to analytics sinks.
+- No-op/local product analytics sink wired into runtime dependencies.
+- Existing API flows now emit sanitized product analytics events after
+  successful work:
+  - `upload_presigned` after media asset persistence.
+  - `edit_brief_created` after edit brief version persistence.
+  - `render_job_created` after render job persistence and queue enqueue.
 - Internal admin analytics read models over Postgres:
   upload volume, edit brief creation, render job status counts, render success
   rate, failure code distribution, queue latency, render duration, storage
@@ -367,8 +375,10 @@ Remaining:
   - render duration from persisted worker timestamps
   - storage output counts from output manifests
   - billing and usage ledger reconciliation
-- Provider-agnostic analytics sink boundary:
-  no-op/local sink for tests and PostHog-compatible event sink for production.
+- PostHog-compatible product analytics event sink for production.
+- Additional product analytics events from future worker/billing callbacks:
+  `source_uploaded`, `render_started`, `render_ready`, `render_failed`,
+  `output_downloaded`, `checkout_started`, and `subscription_updated`.
 - Slow-query and index guidance hooks where the Postgres provider exposes
   them.
 - Support-specific audited actions for any future signed storage URL access.

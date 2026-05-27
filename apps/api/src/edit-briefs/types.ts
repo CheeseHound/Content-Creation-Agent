@@ -1,3 +1,4 @@
+import type { ProductAnalyticsSink } from "../analytics/types";
 import type { ApiErrorDetail } from "../api-response";
 
 export const EDIT_BRIEF_SCHEMA_VERSION = "content_ops.edit_brief.v1";
@@ -137,6 +138,8 @@ export interface EditBriefRepository {
 
 export interface CreateEditBriefDependencies {
   editBriefRepository: EditBriefRepository;
+  analyticsSink?: ProductAnalyticsSink;
+  now?: () => Date;
 }
 
 export interface ValidationResult<TValue> {

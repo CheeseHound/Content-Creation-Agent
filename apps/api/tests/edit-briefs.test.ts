@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import type { ProductAnalyticsEventPayload, ProductAnalyticsSink } from "../src/analytics/types";
 import { createEditBriefHandler } from "../src/edit-briefs/route";
 import type {
   CreateEditBriefBody,
@@ -157,6 +158,44 @@ describe("POST /api/edit-briefs", () => {
     assert.doesNotMatch(JSON.stringify(response.body), /OPENAI_API_KEY|STRIPE_SECRET_KEY|SECRET_ACCESS_KEY/);
   });
 
+  it("emits a sanitized edit_brief_created analytics event after version creation", async () => {
+    const repository = new InMemoryEditBriefRepository();
+    const analyticsSink = new RecordingAnalyticsSink();
+    const handler = createEditBriefHandler({
+      editBriefRepository: repository,
+      analyticsSink,
+      now: () => new Date("2026-05-22T12:00:00.000Z"),
+    });
+
+    const response = await handler({ body: VALID_REQUEST });
+
+    assert.equal(response.status, 201);
+    assert.equal(response.body.success, true);
+    assert.deepEqual(analyticsSink.events, [
+      {
+        eventName: "edit_brief_created",
+        workspaceId: "workspace_123",
+        projectId: "project_456",
+        userId: "user_789",
+        sourceAssetId: "asset_abc",
+        editBriefId: "edit_brief_workspace_123_project_456_asset_abc",
+        occurredAt: "2026-05-22T12:00:00.000Z",
+        properties: {
+          captionPreset: "bold",
+          cropStrategy: "speaker_focus",
+          pacing: "fast",
+          targetPlatformCount: 3,
+          tone: "funny",
+          versionNumber: 1,
+        },
+      },
+    ]);
+    assert.doesNotMatch(
+      JSON.stringify(analyticsSink.events),
+      /Turn the product demo|Open on the most surprising|chatMessage|goal|editorialRules/i,
+    );
+  });
+
   it("creates a new version for the same project and source asset", async () => {
     const repository = new InMemoryEditBriefRepository();
     const handler = createEditBriefHandler({ editBriefRepository: repository });
@@ -230,5 +269,13 @@ class InMemoryEditBriefRepository implements EditBriefRepository {
     };
     this.records = [...this.records, createdRecord];
     return createdRecord;
+  }
+}
+
+class RecordingAnalyticsSink implements ProductAnalyticsSink {
+  events: readonly ProductAnalyticsEventPayload[] = [];
+
+  async track(event: ProductAnalyticsEventPayload): Promise<void> {
+    this.events = [...this.events, event];
   }
 }

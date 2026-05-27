@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { trackProductAnalyticsEventBestEffort } from "../analytics/product-events";
 import { DEFAULT_ENTITLEMENTS, buildStorageKeys } from "../render-jobs/contract";
 import type {
   CreateUploadPresignBody,
@@ -40,7 +41,8 @@ export async function createUploadPresign(
     sourceFilename: request.filename,
   });
   const ttlSeconds = dependencies.uploadTtlSeconds ?? DEFAULT_UPLOAD_PRESIGN_TTL_SECONDS;
-  const expiresAt = new Date((dependencies.now?.() ?? new Date()).getTime() + ttlSeconds * 1000);
+  const occurredAt = dependencies.now?.() ?? new Date();
+  const expiresAt = new Date(occurredAt.getTime() + ttlSeconds * 1000);
   const upload = await dependencies.signer.presignUpload({
     key: storageKeys.source_key,
     contentType: request.contentType,
@@ -59,6 +61,21 @@ export async function createUploadPresign(
     durationSeconds: request.durationSeconds,
   };
   const asset = await dependencies.uploadRepository.createMediaAsset(record);
+  await trackProductAnalyticsEventBestEffort({
+    sink: dependencies.analyticsSink,
+    eventName: "upload_presigned",
+    workspaceId: request.workspaceId,
+    projectId: request.projectId,
+    userId: request.userId,
+    sourceAssetId: asset.id,
+    occurredAt,
+    properties: {
+      contentType: request.contentType,
+      durationSeconds: request.durationSeconds,
+      sizeBytes: request.sizeBytes,
+      tier: subscription.tier,
+    },
+  });
 
   return {
     asset: {

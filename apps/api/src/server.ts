@@ -7,6 +7,7 @@ import type {
   AdminAnalyticsSummary,
 } from "./admin/analytics/types";
 import { createStaticAdminAuthorizer, type AdminAuthorizer } from "./admin/auth";
+import { createNoopProductAnalyticsSink } from "./analytics/sinks";
 import { apiError, type HttpResponse } from "./api-response";
 import { loadMigrations, runMigrations } from "./db/migrations";
 import {
@@ -151,6 +152,7 @@ export function createInMemoryDependencies(): ApiServerDependencies {
   return {
     repository,
     queue,
+    analyticsSink: createNoopProductAnalyticsSink(),
     databaseHealthRepository: repository,
     adminAnalyticsRepository: repository,
     adminAuthorizer: createStaticAdminAuthorizer("local-admin-token-123"),
@@ -209,6 +211,7 @@ export async function createPostgresDependencies({
   return {
     repository: new PostgresRenderJobRepository(client),
     queue,
+    analyticsSink: createNoopProductAnalyticsSink(),
     databaseHealthRepository: observabilityRepository,
     adminAnalyticsRepository,
     adminAuthorizer: createStaticAdminAuthorizer(adminToken),

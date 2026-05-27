@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { createUploadPresignHandler } from "../src/uploads/route";
+import type { ProductAnalyticsEventPayload, ProductAnalyticsSink } from "../src/analytics/types";
 import type {
   CreateUploadPresignBody,
   MediaAssetRecord,
@@ -55,6 +56,40 @@ describe("POST /api/uploads/presign", () => {
     );
     assert.equal(dependencies.signer.presignedKeys.length, 1);
     assert.doesNotMatch(JSON.stringify(response.body), /SECRET|ACCESS_KEY|localpass/);
+  });
+
+  it("emits a sanitized upload_presigned analytics event after recording the media asset", async () => {
+    const analyticsSink = new RecordingAnalyticsSink();
+    const dependencies = createDependencies({
+      subscription: { tier: "creator" },
+      assetId: "asset_abc",
+      analyticsSink,
+    });
+    const handler = createUploadPresignHandler(dependencies);
+
+    const response = await handler({ body: VALID_REQUEST });
+
+    assert.equal(response.status, 201);
+    assert.deepEqual(analyticsSink.events, [
+      {
+        eventName: "upload_presigned",
+        workspaceId: "workspace_123",
+        projectId: "project_456",
+        userId: "user_789",
+        sourceAssetId: "asset_abc",
+        occurredAt: "2026-05-22T12:00:00.000Z",
+        properties: {
+          contentType: "video/quicktime",
+          durationSeconds: 185,
+          sizeBytes: 250_000_000,
+          tier: "creator",
+        },
+      },
+    ]);
+    assert.doesNotMatch(
+      JSON.stringify(analyticsSink.events),
+      /Founder Demo|filename|sourceKey|storage|workspaces\/workspace_123/i,
+    );
   });
 
   it("rejects uploads that exceed the workspace plan limit before signing", async () => {
@@ -115,9 +150,11 @@ describe("POST /api/uploads/presign", () => {
 function createDependencies({
   subscription,
   assetId,
+  analyticsSink,
 }: {
   subscription: WorkspaceSubscription;
   assetId: string;
+  analyticsSink?: ProductAnalyticsSink;
 }) {
   const uploadRepository = new InMemoryUploadRepository(subscription);
   const signer = new FakeUploadSigner();
@@ -127,6 +164,7 @@ function createDependencies({
     signer,
     createAssetId: () => assetId,
     now: () => new Date("2026-05-22T12:00:00.000Z"),
+    analyticsSink,
   };
 }
 
@@ -142,6 +180,14 @@ class InMemoryUploadRepository implements UploadRepository {
   async createMediaAsset(record: MediaAssetRecord): Promise<MediaAssetRecord> {
     this.createdAssets = [...this.createdAssets, record];
     return record;
+  }
+}
+
+class RecordingAnalyticsSink implements ProductAnalyticsSink {
+  events: readonly ProductAnalyticsEventPayload[] = [];
+
+  async track(event: ProductAnalyticsEventPayload): Promise<void> {
+    this.events = [...this.events, event];
   }
 }
 

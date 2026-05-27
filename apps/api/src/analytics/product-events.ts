@@ -2,6 +2,7 @@ import type {
   AnalyticsProperties,
   AnalyticsValue,
   ProductAnalyticsEventName,
+  ProductAnalyticsSink,
   TrackProductAnalyticsEventInput,
 } from "./types";
 
@@ -41,6 +42,25 @@ export async function trackProductAnalyticsEvent(
     occurredAt: input.occurredAt.toISOString(),
     properties: sanitizeAnalyticsProperties(input.properties ?? {}),
   });
+}
+
+export async function trackProductAnalyticsEventBestEffort(
+  input: Omit<TrackProductAnalyticsEventInput, "sink"> & {
+    sink?: ProductAnalyticsSink;
+  },
+): Promise<void> {
+  if (!input.sink) {
+    return;
+  }
+
+  try {
+    await trackProductAnalyticsEvent({
+      ...input,
+      sink: input.sink,
+    });
+  } catch (_error) {
+    return;
+  }
 }
 
 export function sanitizeAnalyticsProperties(

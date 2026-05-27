@@ -1,3 +1,4 @@
+import { trackProductAnalyticsEventBestEffort } from "../analytics/product-events";
 import {
   buildEditBriefId,
   buildEditBriefIdempotencyKey,
@@ -30,6 +31,24 @@ export async function createEditBrief(
   };
 
   const editBriefVersion = await dependencies.editBriefRepository.createEditBriefVersion(record);
+  await trackProductAnalyticsEventBestEffort({
+    sink: dependencies.analyticsSink,
+    eventName: "edit_brief_created",
+    workspaceId: editBriefVersion.workspaceId,
+    projectId: editBriefVersion.projectId,
+    userId: editBriefVersion.userId,
+    sourceAssetId: editBriefVersion.sourceAssetId,
+    editBriefId: editBriefVersion.editBriefId,
+    occurredAt: dependencies.now?.() ?? new Date(),
+    properties: {
+      captionPreset: editBriefVersion.settings.captionStyle.preset,
+      cropStrategy: editBriefVersion.settings.cropStrategy,
+      pacing: editBriefVersion.settings.pacing,
+      targetPlatformCount: editBriefVersion.settings.targetPlatforms.length,
+      tone: editBriefVersion.settings.tone,
+      versionNumber: editBriefVersion.versionNumber,
+    },
+  });
 
   return {
     editBrief: {
