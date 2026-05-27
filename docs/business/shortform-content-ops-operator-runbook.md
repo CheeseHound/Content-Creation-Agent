@@ -50,6 +50,7 @@ The summary includes aggregate counts only:
 - render failure-code distribution
 - estimated render minutes
 - usage-ledger render minutes
+- output manifest count and total output bytes
 
 It must not return raw database rows, raw prompts, raw transcripts, signed
 storage URLs, storage keys, object payloads, customer secrets, or customer

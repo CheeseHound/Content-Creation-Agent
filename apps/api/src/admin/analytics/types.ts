@@ -43,6 +43,10 @@ export interface AdminAnalyticsSummary {
   usage: {
     renderMinutes: number;
   };
+  storage: {
+    outputCount: number;
+    totalOutputBytes: number;
+  };
 }
 
 export interface AdminAnalyticsRepository {

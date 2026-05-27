@@ -49,6 +49,11 @@ interface UsageSummaryRow {
   render_minutes: unknown;
 }
 
+interface StorageOutputSummaryRow {
+  output_count: unknown;
+  total_output_bytes: unknown;
+}
+
 export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepository {
   constructor(private readonly client: PostgresQueryClient) {}
 
@@ -63,6 +68,7 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
       renderStatusResult,
       failureCodeResult,
       usageResult,
+      storageOutputResult,
     ] = await Promise.all([
       this.client.query<WorkspaceTotalRow>(
         `
@@ -158,6 +164,32 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
         `,
         values,
       ),
+      this.client.query<StorageOutputSummaryRow>(
+        `
+          select
+            count(output_asset.value) as output_count,
+            coalesce(sum(
+              case
+                when output_asset.value ? 'sizeBytes'
+                  and output_asset.value->>'sizeBytes' ~ '^[0-9]+$'
+                then (output_asset.value->>'sizeBytes')::bigint
+                else 0
+              end
+            ), 0) as total_output_bytes
+          from render_jobs
+          left join lateral jsonb_array_elements(
+            case
+              when jsonb_typeof(output_manifest->'outputs') = 'array'
+              then output_manifest->'outputs'
+              else '[]'::jsonb
+            end
+          ) as output_asset(value) on true
+          where ($1::text is null or workspace_id = $1)
+            and created_at >= $2
+            and created_at < $3
+        `,
+        values,
+      ),
     ]);
     const renderJobStatus = buildRenderStatusSummary(renderStatusResult.rows);
 
@@ -209,6 +241,16 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
         renderMinutes: toNonNegativeInteger(
           usageResult.rows[0]?.render_minutes ?? 0,
           "render_minutes",
+        ),
+      },
+      storage: {
+        outputCount: toNonNegativeInteger(
+          storageOutputResult.rows[0]?.output_count ?? 0,
+          "output_count",
+        ),
+        totalOutputBytes: toNonNegativeInteger(
+          storageOutputResult.rows[0]?.total_output_bytes ?? 0,
+          "total_output_bytes",
         ),
       },
     };

@@ -62,6 +62,10 @@ const SUMMARY: AdminAnalyticsSummary = {
   usage: {
     renderMinutes: 42,
   },
+  storage: {
+    outputCount: 11,
+    totalOutputBytes: 456_000_000,
+  },
 };
 
 describe("admin analytics route", () => {

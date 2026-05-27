@@ -379,6 +379,17 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
       usage: {
         renderMinutes: this.usage.renderedMinutesThisPeriod,
       },
+      storage: {
+        outputCount: jobs.reduce(
+          (sum, job) => sum + (job.outputManifest?.outputs.length ?? 0),
+          0,
+        ),
+        totalOutputBytes: jobs.reduce(
+          (sum, job) => sum + (job.outputManifest?.outputs ?? [])
+            .reduce((outputSum, output) => outputSum + (output.sizeBytes ?? 0), 0),
+          0,
+        ),
+      },
     };
   }
 

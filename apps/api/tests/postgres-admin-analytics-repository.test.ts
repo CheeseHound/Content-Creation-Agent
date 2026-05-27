@@ -21,6 +21,7 @@ describe("PostgresAdminAnalyticsRepository", () => {
       ],
       [{ failure_code: "render_timeout", failure_count: "1" }],
       [{ render_minutes: "42" }],
+      [{ output_count: "11", total_output_bytes: "456000000" }],
     ]);
     const repository = new PostgresAdminAnalyticsRepository(client);
     const start = new Date("2026-05-01T00:00:00.000Z");
@@ -85,13 +86,18 @@ describe("PostgresAdminAnalyticsRepository", () => {
       usage: {
         renderMinutes: 42,
       },
+      storage: {
+        outputCount: 11,
+        totalOutputBytes: 456_000_000,
+      },
     });
-    assert.equal(client.queries.length, 8);
+    assert.equal(client.queries.length, 9);
     for (const query of client.queries) {
       assert.deepEqual(query.values, ["workspace_123", start, end]);
       assert.doesNotMatch(query.text, /select \*/i);
     }
     assert.doesNotMatch(JSON.stringify(summary), /source_key|storage_key|payload|secret|password/i);
+    assert.match(client.queries.at(-1)?.text ?? "", /jsonb_array_elements/);
   });
 });
 
