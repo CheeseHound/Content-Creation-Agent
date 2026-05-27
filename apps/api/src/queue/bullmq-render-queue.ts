@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { Queue, type JobsOptions } from "bullmq";
 
+import type { QueueHealthCheck, QueueHealthReport } from "../observability/types";
 import type { QueueJob, QueueJobPayload, RenderQueue } from "../render-jobs/types";
 
 export const RENDER_JOB_QUEUE_TASK = "render-job";
@@ -25,6 +26,7 @@ const DEFAULT_JOB_OPTIONS = {
 export interface BullMqQueueClient {
   readonly name: string;
   add(name: string, data: QueueJobPayload, options: JobsOptions): Promise<unknown>;
+  getJobCounts(...types: string[]): Promise<Record<string, number>>;
   close(): Promise<void>;
 }
 
@@ -33,7 +35,7 @@ export interface CreateBullMqRenderQueueOptions {
   queueName: string;
 }
 
-export class BullMqRenderQueue implements RenderQueue {
+export class BullMqRenderQueue implements RenderQueue, QueueHealthCheck {
   constructor(private readonly queue: BullMqQueueClient) {}
 
   async enqueue(job: QueueJob): Promise<void> {
@@ -50,6 +52,21 @@ export class BullMqRenderQueue implements RenderQueue {
 
   async close(): Promise<void> {
     await this.queue.close();
+  }
+
+  async getQueueHealth(): Promise<QueueHealthReport> {
+    const counts = await this.queue.getJobCounts("waiting", "active", "delayed", "failed");
+
+    return {
+      status: "ok",
+      name: this.queue.name,
+      counts: {
+        waiting: counts.waiting ?? 0,
+        active: counts.active ?? 0,
+        delayed: counts.delayed ?? 0,
+        failed: counts.failed ?? 0,
+      },
+    };
   }
 }
 

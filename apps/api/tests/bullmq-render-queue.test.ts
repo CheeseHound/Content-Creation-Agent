@@ -132,6 +132,31 @@ describe("BullMqRenderQueue", () => {
 
     assert.equal(client.closed, true);
   });
+
+  it("reports sanitized queue readiness counts", async () => {
+    const client = new FakeBullMqQueueClient("content-ops-render", {
+      active: 2,
+      delayed: 1,
+      failed: 3,
+      waiting: 5,
+    });
+    const queue = new BullMqRenderQueue(client);
+
+    const report = await queue.getQueueHealth();
+
+    assert.deepEqual(report, {
+      status: "ok",
+      name: "content-ops-render",
+      counts: {
+        active: 2,
+        delayed: 1,
+        failed: 3,
+        waiting: 5,
+      },
+    });
+    assert.deepEqual(client.countRequests, [["waiting", "active", "delayed", "failed"]]);
+    assert.doesNotMatch(JSON.stringify(report), /redis:\/\/|password|SECRET/i);
+  });
 });
 
 interface AddedBullMqJob {
@@ -142,9 +167,13 @@ interface AddedBullMqJob {
 
 class FakeBullMqQueueClient {
   addedJobs: readonly AddedBullMqJob[] = [];
+  countRequests: readonly string[][] = [];
   closed = false;
 
-  constructor(readonly name: string) {}
+  constructor(
+    readonly name: string,
+    private readonly counts: Record<string, number> = {},
+  ) {}
 
   async add(name: string, data: QueueJobPayload, options: unknown): Promise<void> {
     this.addedJobs = [...this.addedJobs, { name, data, options }];
@@ -152,6 +181,11 @@ class FakeBullMqQueueClient {
 
   async close(): Promise<void> {
     this.closed = true;
+  }
+
+  async getJobCounts(...types: string[]): Promise<Record<string, number>> {
+    this.countRequests = [...this.countRequests, types];
+    return this.counts;
   }
 }
 

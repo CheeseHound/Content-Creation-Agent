@@ -13,6 +13,17 @@ import type {
   EditBriefReadModel,
   EditBriefVersionRecord,
 } from "./edit-briefs/types";
+import { PostgresObservabilityRepository } from "./observability/postgres-repository";
+import { createHealthzHandler, createReadyzHandler } from "./observability/route";
+import {
+  createConfiguredStorageHealthCheck,
+} from "./observability/service";
+import type {
+  DatabaseHealthReport,
+  ObservabilityDependencies,
+  QueueHealthCheck,
+  QueueHealthReport,
+} from "./observability/types";
 import { createBullMqRenderQueue } from "./queue/bullmq-render-queue";
 import { DEFAULT_RENDER_QUEUE } from "./render-jobs/contract";
 import { PostgresRenderJobRepository } from "./render-jobs/postgres-repository";
@@ -41,7 +52,8 @@ import type {
 export interface ApiServerDependencies
   extends CreateRenderJobDependencies,
     CreateUploadPresignDependencies,
-    CreateEditBriefDependencies {}
+    CreateEditBriefDependencies,
+    ObservabilityDependencies {}
 
 export interface ApiRuntimeDependencies extends ApiServerDependencies {
   close(): Promise<void>;
@@ -65,9 +77,21 @@ export function createApiServer(dependencies: ApiServerDependencies): http.Serve
   const getRenderJobHandler = createGetRenderJobHandler(dependencies);
   const uploadPresignHandler = createUploadPresignHandler(dependencies);
   const editBriefHandler = createEditBriefHandler(dependencies);
+  const healthzHandler = createHealthzHandler(dependencies);
+  const readyzHandler = createReadyzHandler(dependencies);
 
   return http.createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
+
+    if (request.method === "GET" && url.pathname === "/healthz") {
+      writeJson(response, healthzHandler());
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/readyz") {
+      writeJson(response, await readyzHandler());
+      return;
+    }
 
     if (request.method === "POST" && url.pathname === "/api/uploads/presign") {
       const body = await readJsonBody(request);
@@ -108,6 +132,9 @@ export function createInMemoryDependencies(): ApiServerDependencies {
   return {
     repository,
     queue,
+    databaseHealthRepository: repository,
+    queueHealthCheck: resolveQueueHealthCheck(queue),
+    storageHealthCheck: createConfiguredStorageHealthCheck("local"),
     outputSigner: new InMemoryDownloadSigner(),
     activeEditBriefRepository: repository,
     uploadRepository: repository,
@@ -154,10 +181,14 @@ export async function createPostgresDependencies({
   }
 
   const editBriefRepository = new PostgresEditBriefRepository(client);
+  const observabilityRepository = new PostgresObservabilityRepository(client);
 
   return {
     repository: new PostgresRenderJobRepository(client),
     queue,
+    databaseHealthRepository: observabilityRepository,
+    queueHealthCheck: resolveQueueHealthCheck(queue),
+    storageHealthCheck: createConfiguredStorageHealthCheck("s3_compatible"),
     outputSigner: signer,
     activeEditBriefRepository: editBriefRepository,
     uploadRepository: new PostgresUploadRepository(client),
@@ -215,6 +246,34 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
 
   async getUsageSnapshot(_workspaceId: string): Promise<UsageSnapshot> {
     return this.usage;
+  }
+
+  async getDatabaseHealth(): Promise<DatabaseHealthReport> {
+    return {
+      status: "ok",
+      connection: { status: "ok" },
+      migrations: {
+        status: "ok",
+        applied: ["in_memory"],
+      },
+      tables: [
+        {
+          name: "render_jobs",
+          status: "ok",
+          approximateRowCount: this.jobsById.size,
+        },
+        {
+          name: "media_assets",
+          status: "ok",
+          approximateRowCount: this.mediaAssetsById.size,
+        },
+        {
+          name: "edit_briefs",
+          status: "ok",
+          approximateRowCount: this.editBriefsById.size,
+        },
+      ],
+    };
   }
 
   async createRenderJob(record: RenderJobRecord): Promise<RenderJobRecord> {
@@ -286,6 +345,19 @@ class InMemoryRenderQueue implements RenderQueue {
   async enqueue(job: QueueJob): Promise<void> {
     this.jobs = [...this.jobs, job];
   }
+
+  async getQueueHealth(): Promise<QueueHealthReport> {
+    return {
+      status: "ok",
+      name: DEFAULT_RENDER_QUEUE,
+      counts: {
+        waiting: this.jobs.length,
+        active: 0,
+        delayed: 0,
+        failed: 0,
+      },
+    };
+  }
 }
 
 class InMemoryUploadSigner implements UploadSigner {
@@ -334,4 +406,30 @@ function createRequiredS3UploadSigner(
   }
 
   return createS3UploadSigner(storage);
+}
+
+function resolveQueueHealthCheck(queue: RenderQueue): QueueHealthCheck {
+  if (hasQueueHealthCheck(queue)) {
+    return queue;
+  }
+
+  return {
+    async getQueueHealth(): Promise<QueueHealthReport> {
+      return {
+        status: "unavailable",
+        name: DEFAULT_RENDER_QUEUE,
+        counts: {
+          waiting: 0,
+          active: 0,
+          delayed: 0,
+          failed: 0,
+        },
+        errorCode: "queue_check_not_configured",
+      };
+    },
+  };
+}
+
+function hasQueueHealthCheck(value: RenderQueue): value is RenderQueue & QueueHealthCheck {
+  return "getQueueHealth" in value && typeof value.getQueueHealth === "function";
 }

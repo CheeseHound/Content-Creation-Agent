@@ -42,6 +42,10 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
 - Orchestration: Custom Postgres state machine plus BullMQ worker queues. Do
   not introduce LangGraph or LangChain for the core job lifecycle.
 - Billing: Stripe subscriptions and webhooks
+- Observability and analytics: provider-native Postgres monitoring for
+  database health, app-level operational dashboards for render/queue failures,
+  product analytics events for funnel analysis, and internal admin read models
+  for support and business reporting.
 
 ## Current State
 
@@ -97,6 +101,9 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
   `dev-log/2026-05-27-next-chat-active-edit-brief-lookup.md`.
 - Latest active edit brief lookup and planning contract progress is saved at
   `dev-log/2026-05-27-active-edit-brief-lookup-planning-progress.md`.
+- Latest observability health/readiness and analytics contract progress is
+  saved at
+  `dev-log/2026-05-27-observability-health-analytics-progress.md`.
 - Local API-to-worker Hyperframes smoke results are saved at
   `dev-log/2026-05-25-hyperframes-api-worker-smoke-results.md`.
 - Backend API MVP has started under `apps/api` with a TypeScript render-job
@@ -148,6 +155,18 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
   after upload succeeds. Local filesystem storage supports no-paid-service
   tests and smoke runs, and the opt-in S3-compatible worker adapter downloads
   and uploads objects using worker runtime credentials.
+- Observability, database monitoring, and analytics are now the next roadmap
+  priority before further product-surface expansion, so the SaaS can be
+  operated, debugged, and measured safely as features are added.
+- The API now exposes `GET /healthz` and `GET /readyz`; readiness aggregates
+  sanitized Postgres, BullMQ queue, and storage-configuration health without
+  exposing credentials or dependency URLs.
+- A Postgres observability repository now reports connection health,
+  migration state, core table availability, and approximate core table row
+  counts for operator readiness checks.
+- A product analytics event contract now defines the initial funnel event names
+  and filters analytics metadata so raw prompts, raw transcripts, storage
+  keys, credentials, and raw customer media fields are not sent to sinks.
 
 ## Phase 1: Domain And Workflow Contract
 
@@ -290,7 +309,76 @@ Acceptance:
 - Failed jobs are marked with safe error messages.
 - Retried jobs do not double-count usage.
 
-## Phase 4: Storage And Transcription Integration
+## Phase 4: Observability, Admin Analytics, And Database Monitoring
+
+Status: In progress
+
+Completed:
+
+- Safe operational health endpoints:
+  - `GET /healthz` for process liveness without dependency details.
+  - `GET /readyz` for dependency readiness across Postgres, Redis/queue, and
+    storage configuration without exposing credentials.
+- Postgres health repository that reports sanitized database status:
+  connection check, migration state, table availability, approximate row
+  counts for core tables.
+- Product analytics event contract for funnel tracking:
+  `upload_presigned`, `source_uploaded`, `edit_brief_created`,
+  `decision_list_created`, `render_job_created`, `render_started`,
+  `render_ready`, `render_failed`, `output_downloaded`, `checkout_started`,
+  and `subscription_updated`.
+- Provider-agnostic analytics sink boundary with safe metadata filtering so
+  prompts, transcripts, credentials, storage keys, and raw customer media data
+  are not sent to analytics sinks.
+
+Remaining:
+
+- Internal admin analytics read models over Postgres:
+  upload volume, edit brief creation, render job status counts, render success
+  rate, failure code distribution, queue latency, render duration, storage
+  output counts, and usage by workspace/subscription tier.
+- SQL views or stable repository queries for:
+  - workspace usage summary
+  - render funnel summary
+  - render failure summary
+  - edit brief and decision list activity
+  - billing and usage ledger reconciliation
+- Provider-agnostic analytics sink boundary:
+  no-op/local sink for tests and PostHog-compatible event sink for production.
+- Slow-query and index guidance hooks where the Postgres provider exposes
+  them.
+- Internal admin API surface protected behind a dedicated admin authorization
+  boundary:
+  - no raw database dumps
+  - no customer secrets
+  - no signed storage URLs except support-specific audited actions
+  - pagination, bounded date ranges, and workspace filters.
+- Dashboard integration plan for:
+  - Postgres provider dashboard or Performance Insights for database health
+  - Grafana/Datadog for service and worker metrics
+  - PostHog for product events
+  - Metabase/Retool for internal business/support views.
+- Alerting thresholds:
+  failed render rate, queue backlog age, worker retry spikes, Postgres
+  connection saturation, storage upload failures, Stripe webhook failures,
+  transcription failures, and usage-ledger reconciliation drift.
+- Documentation for where operators see each class of signal:
+  database health, worker health, product funnel, business usage, support
+  drill-downs, and incident response.
+
+Acceptance:
+
+- An operator can answer "is the system healthy?" without direct database
+  access.
+- An operator can answer "where are users dropping off?" from product events.
+- A support/admin user can inspect workspace/job state through bounded,
+  sanitized read models instead of ad hoc SQL.
+- Alerts catch queue, render, storage, transcription, billing, and database
+  degradation before users report widespread failures.
+- Analytics never include raw prompts, raw transcripts, storage credentials,
+  database URLs, API keys, or customer media contents.
+
+## Phase 5: Storage And Transcription Integration
 
 Status: Planned
 
@@ -315,7 +403,7 @@ Acceptance:
 - Queue payloads contain storage keys, not storage credentials.
 - Transcription failures are recoverable and visible in job status.
 
-## Phase 5: Edit Brief And Content Style Intelligence
+## Phase 6: Edit Brief And Content Style Intelligence
 
 Status: In progress
 
@@ -374,7 +462,7 @@ Acceptance:
 - Health-related suggestions use safer educational language and flag risky
   claims for review.
 
-## Phase 6: Rendering Pipeline
+## Phase 7: Rendering Pipeline
 
 Status: Planned
 
@@ -404,7 +492,7 @@ Acceptance:
 - Render manifests identify the Hyperframes template, inputs, generated assets,
   and R2 object keys needed for replay or audit.
 
-## Phase 7: Billing And Usage
+## Phase 8: Billing And Usage
 
 Status: Planned
 
@@ -423,7 +511,7 @@ Acceptance:
 - Expensive jobs are gated before queueing.
 - Usage accounting survives retries and worker restarts.
 
-## Phase 8: Frontend MVP
+## Phase 9: Frontend MVP
 
 Status: Planned
 
@@ -464,16 +552,17 @@ Acceptance:
 
 ## Recommended Next Step
 
-Continue the edit brief slice by adding persistence/repository support around
+Implement Phase 4 first: operational health endpoints, sanitized database
+monitoring read models, admin analytics summaries, a product analytics event
+contract, and documentation for where operators view each signal. Keep this
+provider-agnostic, credential-safe, and bounded by admin authorization before
+expanding more product workflow.
+
+After the observability/admin analytics layer is in place, continue the edit
+brief slice by adding persistence/repository support around
 `content_ops.edit_decision_list.v1`, then connect transcript-derived clip
 candidates to the planner. Keep the core orchestration custom with
 Postgres/BullMQ workers and do not introduce LangGraph or LangChain.
-
-After the planning repository path is in place, continue the real-render smoke
-path: download source assets into the scoped worker workspace, execute a
-representative Hyperframes browser composition locally, run FFmpeg MP4
-generation, upload outputs through the storage boundary, persist a real output
-manifest, and only then finalize billable usage.
 
 Before coding, inspect `DEVLOGS.md`, `ROADMAP.md`, and the latest dated file in
 `dev-log/`.
