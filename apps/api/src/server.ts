@@ -8,6 +8,7 @@ import type {
 } from "./admin/analytics/types";
 import { createStaticAdminAuthorizer, type AdminAuthorizer } from "./admin/auth";
 import { createNoopProductAnalyticsSink } from "./analytics/sinks";
+import type { ProductAnalyticsSink } from "./analytics/types";
 import { apiError, type HttpResponse } from "./api-response";
 import { loadMigrations, runMigrations } from "./db/migrations";
 import {
@@ -77,6 +78,7 @@ export interface CreatePostgresDependenciesOptions {
   migrationsDirectory?: string;
   queue?: RenderQueue & { close?: () => Promise<void> };
   signer?: UploadSigner & DownloadSigner;
+  analyticsSink?: ProductAnalyticsSink;
   adminToken: string;
   uploadTtlSeconds?: number;
   outputDownloadTtlSeconds?: number;
@@ -175,6 +177,7 @@ export async function createPostgresDependencies({
   migrationsDirectory,
   queue: providedQueue,
   signer: providedSigner,
+  analyticsSink,
   adminToken,
   uploadTtlSeconds,
   outputDownloadTtlSeconds,
@@ -211,7 +214,7 @@ export async function createPostgresDependencies({
   return {
     repository: new PostgresRenderJobRepository(client),
     queue,
-    analyticsSink: createNoopProductAnalyticsSink(),
+    analyticsSink: analyticsSink ?? createNoopProductAnalyticsSink(),
     databaseHealthRepository: observabilityRepository,
     adminAnalyticsRepository,
     adminAuthorizer: createStaticAdminAuthorizer(adminToken),

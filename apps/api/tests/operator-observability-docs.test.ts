@@ -17,6 +17,8 @@ describe("content ops operator observability runbook", () => {
       "CONTENT_OPS_ADMIN_TOKEN",
       "CONTENT_OPS_STORAGE_SECRET_ACCESS_KEY",
       "CONTENT_OPS_STORAGE_ACCESS_KEY_ID",
+      "PRODUCT_ANALYTICS_SINK=posthog",
+      "POSTHOG_API_KEY",
       "upload_presigned",
       "render_failed",
       "queue backlog age",

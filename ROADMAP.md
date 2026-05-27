@@ -110,6 +110,8 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
   `dev-log/2026-05-27-operator-observability-runbook-progress.md`.
 - Latest API product analytics event wiring progress is saved at
   `dev-log/2026-05-27-product-analytics-api-events-progress.md`.
+- Latest PostHog product analytics sink progress is saved at
+  `dev-log/2026-05-27-product-analytics-posthog-sink-progress.md`.
 - Local API-to-worker Hyperframes smoke results are saved at
   `dev-log/2026-05-25-hyperframes-api-worker-smoke-results.md`.
 - Backend API MVP has started under `apps/api` with a TypeScript render-job
@@ -351,6 +353,8 @@ Completed:
   - `upload_presigned` after media asset persistence.
   - `edit_brief_created` after edit brief version persistence.
   - `render_job_created` after render job persistence and queue enqueue.
+- PostHog-compatible product analytics sink behind `PRODUCT_ANALYTICS_SINK`,
+  `POSTHOG_API_KEY`, and optional `POSTHOG_HOST` configuration.
 - Internal admin analytics read models over Postgres:
   upload volume, edit brief creation, render job status counts, render success
   rate, failure code distribution, queue latency, render duration, storage
@@ -375,7 +379,6 @@ Remaining:
   - render duration from persisted worker timestamps
   - storage output counts from output manifests
   - billing and usage ledger reconciliation
-- PostHog-compatible product analytics event sink for production.
 - Additional product analytics events from future worker/billing callbacks:
   `source_uploaded`, `render_started`, `render_ready`, `render_failed`,
   `output_downloaded`, `checkout_started`, and `subscription_updated`.

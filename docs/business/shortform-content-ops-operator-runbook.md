@@ -75,6 +75,11 @@ Analytics metadata filtering drops prompt, transcript, credential,
 token/password/secret, storage key, and raw media-shaped fields before events
 reach a sink.
 
+Set `PRODUCT_ANALYTICS_SINK=posthog` to enable the PostHog-compatible
+production sink. `POSTHOG_API_KEY` is required in that mode, and `POSTHOG_HOST`
+defaults to `https://app.posthog.com` when omitted. Leave
+`PRODUCT_ANALYTICS_SINK` unset or set to `none` to use the no-op sink.
+
 ## Where Operators Look
 
 Use the API health endpoints first:
@@ -88,7 +93,8 @@ Use provider dashboards for deeper infrastructure signals:
 
 - Database health: Postgres provider dashboard or Performance Insights
 - Service and worker metrics: Grafana or Datadog
-- Product funnel events: PostHog-compatible sink when implemented
+- Product funnel events: PostHog-compatible sink when
+  `PRODUCT_ANALYTICS_SINK=posthog`
 - Internal support views: Metabase or Retool once read models stabilize
 
 ## Alert Candidates
@@ -115,6 +121,7 @@ or log their values:
 - `DATABASE_URL`
 - `REDIS_URL`
 - `OPENAI_API_KEY`
+- `POSTHOG_API_KEY`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 

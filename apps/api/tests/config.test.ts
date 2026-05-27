@@ -30,6 +30,9 @@ describe("loadApiConfig", () => {
       admin: {
         token: "local-admin-token-123",
       },
+      productAnalytics: {
+        sink: "none",
+      },
       storage: {
         bucket: "content-ops-dev",
         region: "auto",
@@ -49,6 +52,24 @@ describe("loadApiConfig", () => {
     assert.equal(config.runDbMigrations, true);
     assert.equal(config.uploadPresignTtlSeconds, 900);
     assert.equal(config.outputDownloadTtlSeconds, 900);
+    assert.deepEqual(config.productAnalytics, { sink: "none" });
+  });
+
+  it("parses PostHog product analytics configuration", () => {
+    const config = loadApiConfig({
+      ...VALID_ENV,
+      PRODUCT_ANALYTICS_SINK: "posthog",
+      POSTHOG_API_KEY: "phc_local",
+      POSTHOG_HOST: "https://eu.posthog.com",
+    });
+
+    assert.deepEqual(config.productAnalytics, {
+      sink: "posthog",
+      postHog: {
+        apiKey: "phc_local",
+        host: "https://eu.posthog.com",
+      },
+    });
   });
 
   it("fails fast when DATABASE_URL is missing", () => {
@@ -213,6 +234,40 @@ describe("loadApiConfig", () => {
         OUTPUT_DOWNLOAD_TTL_SECONDS: "7200",
       }),
       /OUTPUT_DOWNLOAD_TTL_SECONDS must be an integer from 60 to 3600/,
+    );
+  });
+
+  it("rejects invalid product analytics configuration without echoing secrets", () => {
+    assert.throws(
+      () => loadApiConfig({
+        ...VALID_ENV,
+        PRODUCT_ANALYTICS_SINK: "filesystem",
+      }),
+      /PRODUCT_ANALYTICS_SINK must be either none or posthog/,
+    );
+
+    assert.throws(
+      () => loadApiConfig({
+        ...VALID_ENV,
+        PRODUCT_ANALYTICS_SINK: "posthog",
+        POSTHOG_API_KEY: "phc_super_secret_key",
+        POSTHOG_HOST: "ftp://posthog.example",
+      }),
+      (error) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /POSTHOG_HOST must be a valid HTTP URL/);
+        assert.doesNotMatch(error.message, /phc_super_secret_key/);
+        return true;
+      },
+    );
+
+    assert.throws(
+      () => loadApiConfig({
+        ...VALID_ENV,
+        PRODUCT_ANALYTICS_SINK: "posthog",
+        POSTHOG_API_KEY: undefined,
+      }),
+      /POSTHOG_API_KEY must be configured/,
     );
   });
 });

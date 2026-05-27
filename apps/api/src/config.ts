@@ -1,3 +1,5 @@
+import type { ProductAnalyticsSinkConfig } from "./analytics/sinks";
+
 export interface ApiConfig {
   databaseUrl: string;
   redisUrl: string;
@@ -6,6 +8,7 @@ export interface ApiConfig {
   billing: BillingConfig;
   transcription: TranscriptionConfig;
   admin: AdminConfig;
+  productAnalytics: ProductAnalyticsSinkConfig;
   storage: StorageConfig;
   uploadPresignTtlSeconds: number;
   outputDownloadTtlSeconds: number;
@@ -57,6 +60,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     admin: {
       token: requireAdminToken(env.CONTENT_OPS_ADMIN_TOKEN),
     },
+    productAnalytics: parseProductAnalyticsConfig(env),
     storage: {
       bucket: requireText(env.CONTENT_OPS_STORAGE_BUCKET, "CONTENT_OPS_STORAGE_BUCKET"),
       region: requireText(env.CONTENT_OPS_STORAGE_REGION, "CONTENT_OPS_STORAGE_REGION"),
@@ -148,6 +152,26 @@ function parseBooleanFlag(value: string | undefined, defaultValue: boolean): boo
   }
 
   throw new Error("RUN_DB_MIGRATIONS must be either true or false.");
+}
+
+function parseProductAnalyticsConfig(env: NodeJS.ProcessEnv): ProductAnalyticsSinkConfig {
+  const sink = env.PRODUCT_ANALYTICS_SINK ?? "none";
+
+  if (sink === "none") {
+    return { sink: "none" };
+  }
+
+  if (sink !== "posthog") {
+    throw new Error("PRODUCT_ANALYTICS_SINK must be either none or posthog.");
+  }
+
+  return {
+    sink: "posthog",
+    postHog: {
+      apiKey: requireText(env.POSTHOG_API_KEY, "POSTHOG_API_KEY"),
+      host: parseOptionalUrl(env.POSTHOG_HOST, "POSTHOG_HOST") ?? "https://app.posthog.com",
+    },
+  };
 }
 
 function requireText(value: string | undefined, name: string): string {

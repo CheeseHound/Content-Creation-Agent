@@ -1,4 +1,5 @@
 import { loadApiConfig } from "./config";
+import { createProductAnalyticsSink } from "./analytics/sinks";
 import { createApiServer, createPostgresDependencies } from "./server";
 
 async function main(): Promise<void> {
@@ -10,6 +11,7 @@ async function main(): Promise<void> {
     runMigrations: config.runDbMigrations,
     uploadTtlSeconds: config.uploadPresignTtlSeconds,
     outputDownloadTtlSeconds: config.outputDownloadTtlSeconds,
+    analyticsSink: createProductAnalyticsSink(config.productAnalytics),
     adminToken: config.admin.token,
   });
   const server = createApiServer(dependencies);
