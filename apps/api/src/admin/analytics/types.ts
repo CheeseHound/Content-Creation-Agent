@@ -35,6 +35,8 @@ export interface AdminAnalyticsSummary {
     byStatus: Record<RenderJobStatus, number>;
     successRate: number;
     estimatedRenderMinutes: number;
+    queueLatency: AdminAnalyticsTimingSummary;
+    renderDuration: AdminAnalyticsTimingSummary;
     failureCodes: Array<{
       code: string;
       count: number;
@@ -42,11 +44,26 @@ export interface AdminAnalyticsSummary {
   };
   usage: {
     renderMinutes: number;
+    reconciliation: {
+      readyRenderJobs: number;
+      ledgeredRenderJobs: number;
+      unledgeredReadyRenderJobs: number;
+      estimatedReadyRenderMinutes: number;
+      ledgeredReadyRenderMinutes: number;
+      varianceRenderMinutes: number;
+    };
   };
   storage: {
     outputCount: number;
     totalOutputBytes: number;
   };
+}
+
+export interface AdminAnalyticsTimingSummary {
+  measuredJobs: number;
+  averageSeconds: number;
+  p95Seconds: number;
+  maxSeconds: number;
 }
 
 export interface AdminAnalyticsRepository {

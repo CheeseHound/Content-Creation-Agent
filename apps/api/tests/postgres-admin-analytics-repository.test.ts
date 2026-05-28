@@ -19,8 +19,18 @@ describe("PostgresAdminAnalyticsRepository", () => {
         { status: "ready", job_count: "7", estimated_minutes: "70" },
         { status: "failed", job_count: "1", estimated_minutes: "10" },
       ],
+      [{ measured_jobs: "8", average_seconds: "19", p95_seconds: "45", max_seconds: "52" }],
+      [{ measured_jobs: "7", average_seconds: "96", p95_seconds: "181", max_seconds: "214" }],
       [{ failure_code: "render_timeout", failure_count: "1" }],
       [{ render_minutes: "42" }],
+      [{
+        ready_render_jobs: "7",
+        ledgered_render_jobs: "6",
+        unledgered_ready_render_jobs: "1",
+        estimated_ready_render_minutes: "70",
+        ledgered_ready_render_minutes: "42",
+        variance_render_minutes: "28",
+      }],
       [{ output_count: "11", total_output_bytes: "456000000" }],
     ]);
     const repository = new PostgresAdminAnalyticsRepository(client);
@@ -76,6 +86,18 @@ describe("PostgresAdminAnalyticsRepository", () => {
         },
         successRate: 0.875,
         estimatedRenderMinutes: 80,
+        queueLatency: {
+          measuredJobs: 8,
+          averageSeconds: 19,
+          p95Seconds: 45,
+          maxSeconds: 52,
+        },
+        renderDuration: {
+          measuredJobs: 7,
+          averageSeconds: 96,
+          p95Seconds: 181,
+          maxSeconds: 214,
+        },
         failureCodes: [
           {
             code: "render_timeout",
@@ -85,18 +107,29 @@ describe("PostgresAdminAnalyticsRepository", () => {
       },
       usage: {
         renderMinutes: 42,
+        reconciliation: {
+          readyRenderJobs: 7,
+          ledgeredRenderJobs: 6,
+          unledgeredReadyRenderJobs: 1,
+          estimatedReadyRenderMinutes: 70,
+          ledgeredReadyRenderMinutes: 42,
+          varianceRenderMinutes: 28,
+        },
       },
       storage: {
         outputCount: 11,
         totalOutputBytes: 456_000_000,
       },
     });
-    assert.equal(client.queries.length, 9);
+    assert.equal(client.queries.length, 12);
     for (const query of client.queries) {
       assert.deepEqual(query.values, ["workspace_123", start, end]);
       assert.doesNotMatch(query.text, /select \*/i);
     }
     assert.doesNotMatch(JSON.stringify(summary), /source_key|storage_key|payload|secret|password/i);
+    assert.match(client.queries[6]?.text ?? "", /render_started_at - created_at/);
+    assert.match(client.queries[7]?.text ?? "", /render_completed_at - render_started_at/);
+    assert.match(client.queries[10]?.text ?? "", /ledger_by_job/);
     assert.match(client.queries.at(-1)?.text ?? "", /jsonb_array_elements/);
   });
 });

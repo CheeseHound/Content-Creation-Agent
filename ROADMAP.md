@@ -1,6 +1,6 @@
 # Shortform Content Ops SaaS Roadmap
 
-Last updated: 2026-05-27
+Last updated: 2026-05-28
 
 ## Product Direction
 
@@ -76,6 +76,10 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
 - The first edit planning contract now exists under `apps/api/src/edit-planning`
   and turns clip candidates plus `content_ops.edit_brief.v1` settings into a
   deterministic `content_ops.edit_decision_list.v1` decision list.
+- The API now exposes `POST /api/edit-decision-lists` to resolve the active
+  edit brief, accept validated clip candidates or transcript segments, derive
+  deterministic clip candidates when needed, persist the decision list
+  idempotently, and emit sanitized `decision_list_created` analytics.
 - Architecture decision: keep the custom state-machine and queue-worker design;
   do not use LangGraph or LangChain as the core orchestrator.
 - Production SaaS contract has been started in
@@ -114,6 +118,16 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
   `dev-log/2026-05-27-product-analytics-posthog-sink-progress.md`.
 - Latest admin analytics storage output count progress is saved at
   `dev-log/2026-05-27-admin-analytics-output-counts-progress.md`.
+- Latest admin analytics timing and usage reconciliation progress is saved at
+  `dev-log/2026-05-28-admin-analytics-timing-reconciliation-progress.md`.
+- Latest edit decision list API progress is saved at
+  `dev-log/2026-05-28-edit-decision-list-api-progress.md`.
+- Latest transcript-derived planning progress is saved at
+  `dev-log/2026-05-28-transcript-candidate-planning-progress.md`.
+- Latest output download analytics progress is saved at
+  `dev-log/2026-05-28-output-download-analytics-progress.md`.
+- Latest five-unit session summary is saved at
+  `dev-log/2026-05-28-five-unit-session-summary.md`.
 - Local API-to-worker Hyperframes smoke results are saved at
   `dev-log/2026-05-25-hyperframes-api-worker-smoke-results.md`.
 - Backend API MVP has started under `apps/api` with a TypeScript render-job
@@ -354,15 +368,23 @@ Completed:
   successful work:
   - `upload_presigned` after media asset persistence.
   - `edit_brief_created` after edit brief version persistence.
+  - `decision_list_created` after edit decision list persistence.
   - `render_job_created` after render job persistence and queue enqueue.
+  - `output_downloaded` after ready render outputs are signed for download.
 - PostHog-compatible product analytics sink behind `PRODUCT_ANALYTICS_SINK`,
   `POSTHOG_API_KEY`, and optional `POSTHOG_HOST` configuration.
 - Internal admin analytics summary now includes storage output count and total
   output bytes from render job output manifests.
+- Worker render status updates now persist dedicated `render_started_at`,
+  `render_completed_at`, and `render_failed_at` timestamps so operator
+  analytics do not derive timing from generic `updated_at` changes.
+- Internal admin analytics summary now includes queue latency, render duration,
+  and usage-ledger reconciliation against ready render jobs.
 - Internal admin analytics read models over Postgres:
   upload volume, edit brief creation, render job status counts, render success
   rate, failure code distribution, queue latency, render duration, storage
-  output counts, and usage by workspace/subscription tier.
+  output counts, and usage/billing reconciliation by workspace/subscription
+  tier.
 - SQL views or stable repository queries for:
   - workspace usage summary
   - render funnel summary
@@ -378,13 +400,9 @@ Completed:
 
 Remaining:
 
-- Admin analytics read model follow-ups:
-  - queue latency
-  - render duration from persisted worker timestamps
-  - billing and usage ledger reconciliation
 - Additional product analytics events from future worker/billing callbacks:
   `source_uploaded`, `render_started`, `render_ready`, `render_failed`,
-  `output_downloaded`, `checkout_started`, and `subscription_updated`.
+  `checkout_started`, and `subscription_updated`.
 - Slow-query and index guidance hooks where the Postgres provider exposes
   them.
 - Support-specific audited actions for any future signed storage URL access.
@@ -444,10 +462,11 @@ Build:
 - `edit_briefs` and `edit_brief_versions` persistence so user revisions can
   rerun scoring and planning without re-uploading or re-transcribing source
   media. Initial append-only versioning implemented.
-- Initial `edit_decision_lists` persistence table for downstream clip planning
-  output. `edit_constraints` remains pending.
-- Initial pure edit planning function that maps transcript/clip candidates and
-  active edit brief settings into deterministic include/exclude/ranking hints.
+- Initial `edit_decision_lists` persistence table and API route for downstream
+  clip planning output. `edit_constraints` remains pending.
+- Initial planning flow that maps validated transcript segments or clip
+  candidates plus active edit brief settings into deterministic
+  include/exclude/ranking hints, then persists the resulting decision list.
 - Website chat endpoint that converts user messages into structured edit brief
   settings with schema validation and safe fallbacks. Initial deterministic
   extraction implemented in `POST /api/edit-briefs`; richer LLM-backed
@@ -467,8 +486,9 @@ Build:
   to action, and blocked phrases.
 - Clip scoring that combines transcript alignment, visual/audio signals,
   content profile rules, and the active edit brief instead of relying on
-  Hyperframes for editing quality. Initial render payload wiring and a narrow
-  edit decision list planner are implemented; full scoring is still pending.
+  Hyperframes for editing quality. Initial render payload wiring, transcript
+  candidate extraction, and a narrow persisted edit decision list planner are
+  implemented; full multimodal scoring is still pending.
 - QC rules for bad crops, missing captions, clipped words, dead air, black
   frames, frozen frames, unreadable captions, and audio drift before final
   render.
@@ -577,17 +597,11 @@ Acceptance:
 
 ## Recommended Next Step
 
-Implement Phase 4 first: operational health endpoints, sanitized database
-monitoring read models, admin analytics summaries, a product analytics event
-contract, and documentation for where operators view each signal. Keep this
-provider-agnostic, credential-safe, and bounded by admin authorization before
-expanding more product workflow.
-
-After the observability/admin analytics layer is in place, continue the edit
-brief slice by adding persistence/repository support around
-`content_ops.edit_decision_list.v1`, then connect transcript-derived clip
-candidates to the planner. Keep the core orchestration custom with
-Postgres/BullMQ workers and do not introduce LangGraph or LangChain.
+Continue with content profile detection and richer clip scoring over persisted
+transcripts/candidates, then wire worker/billing callback analytics events and
+real alert delivery onto the Phase 4 surfaces. Keep the core orchestration
+custom with Postgres/BullMQ workers and do not introduce LangGraph or
+LangChain.
 
 Before coding, inspect `DEVLOGS.md`, `ROADMAP.md`, and the latest dated file in
 `dev-log/`.

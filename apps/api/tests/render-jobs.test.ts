@@ -567,10 +567,12 @@ describe("POST /api/render-jobs", () => {
 
   it("adds signed download targets for ready render job outputs", async () => {
     const outputSigner = new FakeDownloadSigner();
+    const analyticsSink = new RecordingAnalyticsSink();
     const dependencies = createDependencies({
       subscription: { tier: "creator" },
       usage: { activeRenderJobs: 0, renderedMinutesThisPeriod: 0 },
       outputSigner,
+      analyticsSink,
     });
     const getHandler = createGetRenderJobHandler(dependencies);
     dependencies.repository.createdJobs = [
@@ -623,7 +625,22 @@ describe("POST /api/render-jobs", () => {
         expiresAt: new Date("2026-05-22T12:15:00.000Z"),
       },
     ]);
+    assert.deepEqual(analyticsSink.events, [{
+      eventName: "output_downloaded",
+      workspaceId: "workspace_123",
+      projectId: "project_456",
+      userId: "user_789",
+      sourceAssetId: "asset_abc",
+      renderJobId: READY_RENDER_JOB.id,
+      occurredAt: "2026-05-22T12:00:00.000Z",
+      properties: {
+        outputCount: 1,
+        totalDurationSeconds: 42,
+        totalSizeBytes: 12_000_000,
+      },
+    }]);
     assert.doesNotMatch(JSON.stringify(response.body), /SECRET|ACCESS_KEY|OPENAI|STRIPE/);
+    assert.doesNotMatch(JSON.stringify(analyticsSink.events), /storageKey|render_output_prefix|clip-1\.mp4/i);
   });
 
   it("does not sign output manifest keys outside the render output prefix", async () => {

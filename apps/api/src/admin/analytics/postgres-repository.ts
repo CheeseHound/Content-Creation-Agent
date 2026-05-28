@@ -40,6 +40,13 @@ interface RenderJobStatusRow {
   estimated_minutes: unknown;
 }
 
+interface TimingSummaryRow {
+  measured_jobs: unknown;
+  average_seconds: unknown;
+  p95_seconds: unknown;
+  max_seconds: unknown;
+}
+
 interface FailureCodeRow {
   failure_code: unknown;
   failure_count: unknown;
@@ -47,6 +54,15 @@ interface FailureCodeRow {
 
 interface UsageSummaryRow {
   render_minutes: unknown;
+}
+
+interface UsageReconciliationRow {
+  ready_render_jobs: unknown;
+  ledgered_render_jobs: unknown;
+  unledgered_ready_render_jobs: unknown;
+  estimated_ready_render_minutes: unknown;
+  ledgered_ready_render_minutes: unknown;
+  variance_render_minutes: unknown;
 }
 
 interface StorageOutputSummaryRow {
@@ -66,8 +82,11 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
       editBriefResult,
       decisionListResult,
       renderStatusResult,
+      queueLatencyResult,
+      renderDurationResult,
       failureCodeResult,
       usageResult,
+      usageReconciliationResult,
       storageOutputResult,
     ] = await Promise.all([
       this.client.query<WorkspaceTotalRow>(
@@ -138,6 +157,41 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
         `,
         values,
       ),
+      this.client.query<TimingSummaryRow>(
+        `
+          select
+            count(*) as measured_jobs,
+            coalesce(floor(avg(greatest(extract(epoch from render_started_at - created_at), 0)))::bigint, 0) as average_seconds,
+            coalesce(floor(percentile_cont(0.95) within group (
+              order by greatest(extract(epoch from render_started_at - created_at), 0)
+            ))::bigint, 0) as p95_seconds,
+            coalesce(floor(max(greatest(extract(epoch from render_started_at - created_at), 0)))::bigint, 0) as max_seconds
+          from render_jobs
+          where ($1::text is null or workspace_id = $1)
+            and created_at >= $2
+            and created_at < $3
+            and render_started_at is not null
+        `,
+        values,
+      ),
+      this.client.query<TimingSummaryRow>(
+        `
+          select
+            count(*) as measured_jobs,
+            coalesce(floor(avg(greatest(extract(epoch from render_completed_at - render_started_at), 0)))::bigint, 0) as average_seconds,
+            coalesce(floor(percentile_cont(0.95) within group (
+              order by greatest(extract(epoch from render_completed_at - render_started_at), 0)
+            ))::bigint, 0) as p95_seconds,
+            coalesce(floor(max(greatest(extract(epoch from render_completed_at - render_started_at), 0)))::bigint, 0) as max_seconds
+          from render_jobs
+          where ($1::text is null or workspace_id = $1)
+            and created_at >= $2
+            and created_at < $3
+            and render_started_at is not null
+            and render_completed_at is not null
+        `,
+        values,
+      ),
       this.client.query<FailureCodeRow>(
         `
           select
@@ -161,6 +215,46 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
           where ($1::text is null or workspace_id = $1)
             and created_at >= $2
             and created_at < $3
+        `,
+        values,
+      ),
+      this.client.query<UsageReconciliationRow>(
+        `
+          with ledger_by_job as (
+            select
+              render_job_id,
+              sum(render_minutes) as ledgered_render_minutes
+            from usage_ledger
+            where ($1::text is null or workspace_id = $1)
+              and created_at >= $2
+              and created_at < $3
+              and render_job_id is not null
+            group by render_job_id
+          ),
+          ready_jobs as (
+            select
+              r.id,
+              r.estimated_render_minutes,
+              l.render_job_id is not null as has_ledger,
+              coalesce(l.ledgered_render_minutes, 0) as ledgered_render_minutes
+            from render_jobs r
+            left join ledger_by_job l on l.render_job_id = r.id
+            where ($1::text is null or r.workspace_id = $1)
+              and r.created_at >= $2
+              and r.created_at < $3
+              and r.status = 'ready'
+          )
+          select
+            count(*) as ready_render_jobs,
+            count(*) filter (where has_ledger) as ledgered_render_jobs,
+            count(*) filter (where not has_ledger) as unledgered_ready_render_jobs,
+            coalesce(sum(estimated_render_minutes), 0) as estimated_ready_render_minutes,
+            coalesce(sum(ledgered_render_minutes), 0) as ledgered_ready_render_minutes,
+            abs(
+              coalesce(sum(estimated_render_minutes), 0)
+              - coalesce(sum(ledgered_render_minutes), 0)
+            ) as variance_render_minutes
+          from ready_jobs
         `,
         values,
       ),
@@ -232,6 +326,8 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
         successRate: renderJobStatus.total === 0
           ? 0
           : renderJobStatus.byStatus.ready / renderJobStatus.total,
+        queueLatency: mapTimingSummary(queueLatencyResult.rows[0], "queue_latency"),
+        renderDuration: mapTimingSummary(renderDurationResult.rows[0], "render_duration"),
         failureCodes: failureCodeResult.rows.map((row) => ({
           code: requireString(row.failure_code, "failure_code"),
           count: toNonNegativeInteger(row.failure_count, "failure_count"),
@@ -242,6 +338,7 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
           usageResult.rows[0]?.render_minutes ?? 0,
           "render_minutes",
         ),
+        reconciliation: mapUsageReconciliation(usageReconciliationResult.rows[0]),
       },
       storage: {
         outputCount: toNonNegativeInteger(
@@ -255,6 +352,44 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
       },
     };
   }
+}
+
+function mapTimingSummary(row: TimingSummaryRow | undefined, field: string) {
+  return {
+    measuredJobs: toNonNegativeInteger(row?.measured_jobs ?? 0, `${field}.measured_jobs`),
+    averageSeconds: toNonNegativeInteger(row?.average_seconds ?? 0, `${field}.average_seconds`),
+    p95Seconds: toNonNegativeInteger(row?.p95_seconds ?? 0, `${field}.p95_seconds`),
+    maxSeconds: toNonNegativeInteger(row?.max_seconds ?? 0, `${field}.max_seconds`),
+  };
+}
+
+function mapUsageReconciliation(row: UsageReconciliationRow | undefined) {
+  return {
+    readyRenderJobs: toNonNegativeInteger(
+      row?.ready_render_jobs ?? 0,
+      "ready_render_jobs",
+    ),
+    ledgeredRenderJobs: toNonNegativeInteger(
+      row?.ledgered_render_jobs ?? 0,
+      "ledgered_render_jobs",
+    ),
+    unledgeredReadyRenderJobs: toNonNegativeInteger(
+      row?.unledgered_ready_render_jobs ?? 0,
+      "unledgered_ready_render_jobs",
+    ),
+    estimatedReadyRenderMinutes: toNonNegativeInteger(
+      row?.estimated_ready_render_minutes ?? 0,
+      "estimated_ready_render_minutes",
+    ),
+    ledgeredReadyRenderMinutes: toNonNegativeInteger(
+      row?.ledgered_ready_render_minutes ?? 0,
+      "ledgered_ready_render_minutes",
+    ),
+    varianceRenderMinutes: toNonNegativeInteger(
+      row?.variance_render_minutes ?? 0,
+      "variance_render_minutes",
+    ),
+  };
 }
 
 function buildTierCounts(rows: readonly WorkspaceTierRow[]): Record<SubscriptionTier, number> {

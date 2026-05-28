@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildEditDecisionList } from "../src/edit-planning/contract";
+import {
+  buildEditDecisionList,
+  buildTranscriptClipCandidates,
+} from "../src/edit-planning/contract";
 import type {
   ClipCandidateInput,
   EditPlanningBriefReference,
@@ -135,6 +138,32 @@ describe("buildEditDecisionList", () => {
       JSON.stringify(decisionList),
       /chatMessage|never persist this raw note/,
     );
+  });
+
+  it("derives deterministic clip candidates from transcript segments", () => {
+    const candidates = buildTranscriptClipCandidates({
+      sourceAssetId: "asset_abc",
+      segments: [
+        {
+          startMs: 0,
+          endMs: 20_000,
+          text: "  Here is the dashboard reveal and workflow result.  ",
+        },
+        {
+          startMs: 20_000,
+          endMs: 20_000,
+          text: "Invalid zero length segment.",
+        },
+      ],
+    });
+
+    assert.deepEqual(candidates, [{
+      id: "clip_candidate_asset_abc_1",
+      startMs: 0,
+      endMs: 20_000,
+      transcriptText: "Here is the dashboard reveal and workflow result.",
+      baseScore: 68,
+    }]);
   });
 });
 

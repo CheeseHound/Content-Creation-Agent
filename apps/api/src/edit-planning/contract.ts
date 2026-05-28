@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   EDIT_DECISION_LIST_SCHEMA_VERSION,
   type BuildEditDecisionListInput,
+  type BuildTranscriptClipCandidatesInput,
   type ClipCandidateInput,
   type EditDecision,
   type EditDecisionList,
@@ -28,6 +29,24 @@ export function buildEditDecisionList(input: BuildEditDecisionListInput): EditDe
     idempotencyKey,
     decisions: rankedDecisions,
   };
+}
+
+export function buildTranscriptClipCandidates(
+  input: BuildTranscriptClipCandidatesInput,
+): ClipCandidateInput[] {
+  return input.segments
+    .filter((segment) => segment.endMs > segment.startMs)
+    .map((segment, index) => {
+      const transcriptText = normalizeWhitespace(segment.text);
+
+      return {
+        id: `clip_candidate_${slugifyIdSegment(input.sourceAssetId)}_${index + 1}`,
+        startMs: segment.startMs,
+        endMs: segment.endMs,
+        transcriptText,
+        baseScore: scoreTranscriptSegment(transcriptText),
+      };
+    });
 }
 
 function scoreCandidate(
@@ -139,6 +158,34 @@ function fingerprint(value: unknown): string {
     .update(stableStringify(value))
     .digest("hex")
     .slice(0, 12);
+}
+
+function scoreTranscriptSegment(transcriptText: string): number {
+  const lowerText = transcriptText.toLowerCase();
+  const signalMatches = [
+    "demo",
+    "reveal",
+    "result",
+    "mistake",
+    "learned",
+    "workflow",
+    "before",
+    "after",
+    "why",
+    "how",
+  ].filter((signal) => lowerText.includes(signal)).length;
+  const wordCount = lowerText.split(/\s+/).filter(Boolean).length;
+
+  return Math.min(100, 45 + Math.min(wordCount, 30) + signalMatches * 5);
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function slugifyIdSegment(value: string): string {
+  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return slug || "source";
 }
 
 function stableStringify(value: unknown): string {

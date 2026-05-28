@@ -49,7 +49,10 @@ The summary includes aggregate counts only:
 - render success rate
 - render failure-code distribution
 - estimated render minutes
+- queue latency seconds from queued job creation to worker claim
+- render duration seconds from worker claim to completed output manifest
 - usage-ledger render minutes
+- usage-ledger reconciliation against ready render jobs
 - output manifest count and total output bytes
 
 It must not return raw database rows, raw prompts, raw transcripts, signed
@@ -104,6 +107,8 @@ Initial alert thresholds should cover:
 
 - failed render rate
 - queue backlog age
+- queue latency p95
+- render duration p95
 - worker retry spikes
 - Postgres connection saturation
 - storage upload failures

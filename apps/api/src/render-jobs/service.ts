@@ -148,9 +148,35 @@ export async function getRenderJobById(
     return undefined;
   }
 
+  const outputs = await buildSignedOutputs(renderJob, dependencies);
+
+  if (outputs.length > 0) {
+    await trackProductAnalyticsEventBestEffort({
+      sink: dependencies.analyticsSink,
+      eventName: "output_downloaded",
+      workspaceId: renderJob.workspaceId,
+      projectId: renderJob.projectId,
+      userId: renderJob.userId,
+      sourceAssetId: renderJob.sourceAssetId,
+      renderJobId: renderJob.id,
+      occurredAt: dependencies.now?.() ?? new Date(),
+      properties: {
+        outputCount: outputs.length,
+        totalDurationSeconds: outputs.reduce(
+          (sum, output) => sum + (output.durationSeconds ?? 0),
+          0,
+        ),
+        totalSizeBytes: outputs.reduce(
+          (sum, output) => sum + (output.sizeBytes ?? 0),
+          0,
+        ),
+      },
+    });
+  }
+
   return {
     ...renderJob,
-    outputs: await buildSignedOutputs(renderJob, dependencies),
+    outputs,
   };
 }
 

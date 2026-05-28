@@ -29,6 +29,7 @@ export class PostgresRenderWorkerRepository implements RenderWorkerRepository {
         update render_jobs
         set
           status = 'rendering',
+          render_started_at = coalesce(render_started_at, now()),
           updated_at = now()
         where workspace_id = $1
           and project_id = $2
@@ -73,6 +74,7 @@ export class PostgresRenderWorkerRepository implements RenderWorkerRepository {
         set
           status = 'ready',
           output_manifest = $2::jsonb,
+          render_completed_at = coalesce(render_completed_at, now()),
           updated_at = now()
         where id = $1
           and status in ('rendering', 'ready')
@@ -96,6 +98,7 @@ export class PostgresRenderWorkerRepository implements RenderWorkerRepository {
           status = 'failed',
           failure_code = $5,
           failure_message = $6,
+          render_failed_at = coalesce(render_failed_at, now()),
           updated_at = now()
         where workspace_id = $1
           and project_id = $2

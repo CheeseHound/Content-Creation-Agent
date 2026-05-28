@@ -22,6 +22,12 @@ import type {
   EditBriefReadModel,
   EditBriefVersionRecord,
 } from "./edit-briefs/types";
+import { PostgresEditDecisionListRepository } from "./edit-planning/postgres-repository";
+import { createEditDecisionListHandler } from "./edit-planning/route";
+import type {
+  CreateEditDecisionListDependencies,
+  EditDecisionListRecord,
+} from "./edit-planning/types";
 import { PostgresObservabilityRepository } from "./observability/postgres-repository";
 import { createHealthzHandler, createReadyzHandler } from "./observability/route";
 import {
@@ -62,6 +68,7 @@ export interface ApiServerDependencies
   extends CreateRenderJobDependencies,
     CreateUploadPresignDependencies,
     CreateEditBriefDependencies,
+    CreateEditDecisionListDependencies,
     AdminAnalyticsDependencies,
     ObservabilityDependencies {}
 
@@ -89,6 +96,7 @@ export function createApiServer(dependencies: ApiServerDependencies): http.Serve
   const getRenderJobHandler = createGetRenderJobHandler(dependencies);
   const uploadPresignHandler = createUploadPresignHandler(dependencies);
   const editBriefHandler = createEditBriefHandler(dependencies);
+  const editDecisionListHandler = createEditDecisionListHandler(dependencies);
   const adminAnalyticsSummaryHandler = createAdminAnalyticsSummaryHandler(dependencies);
   const healthzHandler = createHealthzHandler(dependencies);
   const readyzHandler = createReadyzHandler(dependencies);
@@ -136,6 +144,13 @@ export function createApiServer(dependencies: ApiServerDependencies): http.Serve
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/edit-decision-lists") {
+      const body = await readJsonBody(request);
+      const routeResponse = await editDecisionListHandler({ body });
+      writeJson(response, routeResponse);
+      return;
+    }
+
     const renderJobId = extractRenderJobId(url.pathname);
     if (request.method === "GET" && renderJobId) {
       const routeResponse = await getRenderJobHandler({ params: { id: renderJobId } });
@@ -165,6 +180,7 @@ export function createInMemoryDependencies(): ApiServerDependencies {
     uploadRepository: repository,
     signer: new InMemoryUploadSigner(),
     editBriefRepository: repository,
+    editDecisionListRepository: repository,
   };
 }
 
@@ -208,6 +224,7 @@ export async function createPostgresDependencies({
   }
 
   const editBriefRepository = new PostgresEditBriefRepository(client);
+  const editDecisionListRepository = new PostgresEditDecisionListRepository(client);
   const observabilityRepository = new PostgresObservabilityRepository(client);
   const adminAnalyticsRepository = new PostgresAdminAnalyticsRepository(client);
 
@@ -225,6 +242,7 @@ export async function createPostgresDependencies({
     uploadRepository: new PostgresUploadRepository(client),
     signer,
     editBriefRepository,
+    editDecisionListRepository,
     uploadTtlSeconds,
     outputDownloadTtlSeconds,
     async close(): Promise<void> {
@@ -277,6 +295,7 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
   private jobsById: ReadonlyMap<string, RenderJobRecord> = new Map();
   private mediaAssetsById: ReadonlyMap<string, MediaAssetRecord> = new Map();
   private editBriefsById: ReadonlyMap<string, readonly EditBriefVersionRecord[]> = new Map();
+  private editDecisionListsById: ReadonlyMap<string, EditDecisionListRecord> = new Map();
 
   async getWorkspaceSubscription(_workspaceId: string): Promise<WorkspaceSubscription> {
     return this.subscription;
@@ -352,7 +371,9 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
           .reduce((sum, versions) => sum + versions.length, 0),
       },
       decisionLists: {
-        count: 0,
+        count: [...this.editDecisionListsById.values()].filter((decisionList) =>
+          !request.workspaceId || decisionList.workspaceId === request.workspaceId,
+        ).length,
       },
       renderJobs: {
         total: jobs.length,
@@ -374,10 +395,34 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
           (sum, job) => sum + job.estimatedRenderMinutes,
           0,
         ),
+        queueLatency: {
+          measuredJobs: 0,
+          averageSeconds: 0,
+          p95Seconds: 0,
+          maxSeconds: 0,
+        },
+        renderDuration: {
+          measuredJobs: 0,
+          averageSeconds: 0,
+          p95Seconds: 0,
+          maxSeconds: 0,
+        },
         failureCodes: [],
       },
       usage: {
         renderMinutes: this.usage.renderedMinutesThisPeriod,
+        reconciliation: {
+          readyRenderJobs: jobs.filter((job) => job.status === "ready").length,
+          ledgeredRenderJobs: 0,
+          unledgeredReadyRenderJobs: jobs.filter((job) => job.status === "ready").length,
+          estimatedReadyRenderMinutes: jobs
+            .filter((job) => job.status === "ready")
+            .reduce((sum, job) => sum + job.estimatedRenderMinutes, 0),
+          ledgeredReadyRenderMinutes: 0,
+          varianceRenderMinutes: jobs
+            .filter((job) => job.status === "ready")
+            .reduce((sum, job) => sum + job.estimatedRenderMinutes, 0),
+        },
       },
       storage: {
         outputCount: jobs.reduce(
@@ -419,6 +464,23 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
       [record.editBriefId, [...versions, createdRecord]],
     ]);
     return createdRecord;
+  }
+
+  async createEditDecisionList(
+    record: EditDecisionListRecord,
+  ): Promise<EditDecisionListRecord> {
+    const existing = [...this.editDecisionListsById.values()]
+      .find((decisionList) => decisionList.idempotencyKey === record.idempotencyKey);
+
+    if (existing) {
+      return existing;
+    }
+
+    this.editDecisionListsById = new Map([
+      ...this.editDecisionListsById.entries(),
+      [record.id, record],
+    ]);
+    return record;
   }
 
   async getActiveEditBrief(request: {

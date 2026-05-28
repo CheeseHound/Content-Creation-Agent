@@ -13,6 +13,14 @@ When starting or continuing work in this repo, read these files first:
 If `dev-log/` has no dated handoff yet, continue from `ROADMAP.md` and the
 current task.
 
+## Work Size Preference
+
+When the user asks for "sessions" or "work sizes" in one chat, treat each
+session as a substantial roadmap unit, not a tiny implementation pass. Aim for
+roughly 3-5% of the full roadmap per session when feasible, update the dev log
+and roadmap after each completed unit, then continue immediately into the next
+unit unless the user explicitly pauses.
+
 ## When Asked For A Next-Chat Prompt
 
 When the user asks for a full prompt for the next chat:

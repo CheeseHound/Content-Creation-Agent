@@ -140,6 +140,9 @@ create table if not exists render_jobs (
   output_manifest jsonb,
   failure_code text,
   failure_message text,
+  render_started_at timestamptz,
+  render_completed_at timestamptz,
+  render_failed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -149,6 +152,14 @@ create index if not exists render_jobs_workspace_status_idx
 
 create index if not exists render_jobs_project_created_idx
   on render_jobs (project_id, created_at desc);
+
+create index if not exists render_jobs_workspace_started_idx
+  on render_jobs (workspace_id, render_started_at desc)
+  where render_started_at is not null;
+
+create index if not exists render_jobs_workspace_completed_idx
+  on render_jobs (workspace_id, render_completed_at desc)
+  where render_completed_at is not null;
 
 create table if not exists usage_ledger (
   id text primary key,

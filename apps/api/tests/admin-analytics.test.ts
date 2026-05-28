@@ -52,6 +52,18 @@ const SUMMARY: AdminAnalyticsSummary = {
     },
     successRate: 0.625,
     estimatedRenderMinutes: 48,
+    queueLatency: {
+      measuredJobs: 6,
+      averageSeconds: 18,
+      p95Seconds: 44,
+      maxSeconds: 52,
+    },
+    renderDuration: {
+      measuredJobs: 5,
+      averageSeconds: 96,
+      p95Seconds: 181,
+      maxSeconds: 214,
+    },
     failureCodes: [
       {
         code: "render_timeout",
@@ -61,6 +73,14 @@ const SUMMARY: AdminAnalyticsSummary = {
   },
   usage: {
     renderMinutes: 42,
+    reconciliation: {
+      readyRenderJobs: 5,
+      ledgeredRenderJobs: 4,
+      unledgeredReadyRenderJobs: 1,
+      estimatedReadyRenderMinutes: 48,
+      ledgeredReadyRenderMinutes: 42,
+      varianceRenderMinutes: 6,
+    },
   },
   storage: {
     outputCount: 11,

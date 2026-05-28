@@ -18,6 +18,7 @@ describe("PostgresRenderWorkerRepository", () => {
     assert.deepEqual(claim, { renderJobId: "render_job_fixture" });
     assert.match(client.queries[0]?.text ?? "", /update render_jobs/i);
     assert.match(client.queries[0]?.text ?? "", /status = 'rendering'/i);
+    assert.match(client.queries[0]?.text ?? "", /render_started_at = coalesce\(render_started_at, now\(\)\)/i);
     assert.equal(client.queries[0]?.values[0], QUEUE_PAYLOAD.workspace_id);
     assert.equal(client.queries[0]?.values[3], JSON.stringify(QUEUE_PAYLOAD));
   });
@@ -48,6 +49,7 @@ describe("PostgresRenderWorkerRepository", () => {
     });
 
     assert.match(client.queries[0]?.text ?? "", /output_manifest/i);
+    assert.match(client.queries[0]?.text ?? "", /render_completed_at = coalesce\(render_completed_at, now\(\)\)/i);
     assert.equal(client.queries[0]?.values[0], "render_job_fixture");
     assert.equal(client.queries[0]?.values[1], JSON.stringify({ outputs: [] }));
     assert.doesNotMatch(JSON.stringify(client.queries[0]?.values), /SECRET|TOKEN|PASSWORD/i);
@@ -65,6 +67,7 @@ describe("PostgresRenderWorkerRepository", () => {
     });
 
     assert.match(client.queries[0]?.text ?? "", /failure_message/i);
+    assert.match(client.queries[0]?.text ?? "", /render_failed_at = coalesce\(render_failed_at, now\(\)\)/i);
     assert.equal(client.queries[0]?.values[3], JSON.stringify(QUEUE_PAYLOAD));
     assert.equal(client.queries[0]?.values[4], "mock_hyperframes_render_failed");
     assert.equal(client.queries[0]?.values[5], "render workspace validation failed");
