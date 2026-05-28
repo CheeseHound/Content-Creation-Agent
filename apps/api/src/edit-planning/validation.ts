@@ -32,6 +32,7 @@ export function validateCreateEditDecisionListBody(
 
   const hasCandidates = body.candidates !== undefined;
   const hasTranscriptSegments = body.transcriptSegments !== undefined;
+  const hasStoredTranscript = body.useStoredTranscript !== undefined;
   const details = [
     ...["workspaceId", "projectId", "userId", "sourceAssetId"].flatMap((field) =>
       validateIdField(body, field)
@@ -44,11 +45,18 @@ export function validateCreateEditDecisionListBody(
       }))),
     ...(hasCandidates ? validateCandidateList(body.candidates) : []),
     ...(hasTranscriptSegments ? validateTranscriptSegments(body.transcriptSegments) : []),
-    ...(hasCandidates === hasTranscriptSegments
+    ...(body.useStoredTranscript === undefined || body.useStoredTranscript === true
+      ? []
+      : [{
+        field: "useStoredTranscript",
+        code: "invalid_input_source",
+        message: "useStoredTranscript must be true when provided.",
+      }]),
+    ...([hasCandidates, hasTranscriptSegments, hasStoredTranscript].filter(Boolean).length !== 1
       ? [{
         field: "candidates",
         code: "invalid_input_source",
-        message: "Provide exactly one of candidates or transcriptSegments.",
+        message: "Provide exactly one of candidates, transcriptSegments, or useStoredTranscript.",
       }]
       : []),
   ];
@@ -73,6 +81,7 @@ export function validateCreateEditDecisionListBody(
       ...(body.transcriptSegments !== undefined
         ? { transcriptSegments: body.transcriptSegments as TranscriptSegmentInput[] }
         : {}),
+      ...(body.useStoredTranscript === true ? { useStoredTranscript: true as const } : {}),
     },
   };
 }

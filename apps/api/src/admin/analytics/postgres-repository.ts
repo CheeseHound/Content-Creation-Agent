@@ -25,6 +25,11 @@ interface UploadSummaryRow {
   total_bytes: unknown;
 }
 
+interface TranscriptSummaryRow {
+  transcript_count: unknown;
+  segment_count: unknown;
+}
+
 interface EditBriefSummaryRow {
   brief_count: unknown;
   version_count: unknown;
@@ -79,6 +84,7 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
       workspaceTotalResult,
       workspaceTierResult,
       uploadResult,
+      transcriptResult,
       editBriefResult,
       decisionListResult,
       renderStatusResult,
@@ -115,6 +121,18 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
             count(*) as upload_count,
             coalesce(sum(size_bytes), 0) as total_bytes
           from media_assets
+          where ($1::text is null or workspace_id = $1)
+            and created_at >= $2
+            and created_at < $3
+        `,
+        values,
+      ),
+      this.client.query<TranscriptSummaryRow>(
+        `
+          select
+            count(*) as transcript_count,
+            coalesce(sum(jsonb_array_length(segments)), 0) as segment_count
+          from transcripts
           where ($1::text is null or workspace_id = $1)
             and created_at >= $2
             and created_at < $3
@@ -304,6 +322,16 @@ export class PostgresAdminAnalyticsRepository implements AdminAnalyticsRepositor
       uploads: {
         count: toNonNegativeInteger(uploadResult.rows[0]?.upload_count ?? 0, "upload_count"),
         totalBytes: toNonNegativeInteger(uploadResult.rows[0]?.total_bytes ?? 0, "total_bytes"),
+      },
+      transcripts: {
+        count: toNonNegativeInteger(
+          transcriptResult.rows[0]?.transcript_count ?? 0,
+          "transcript_count",
+        ),
+        segmentCount: toNonNegativeInteger(
+          transcriptResult.rows[0]?.segment_count ?? 0,
+          "segment_count",
+        ),
       },
       editBriefs: {
         briefCount: toNonNegativeInteger(

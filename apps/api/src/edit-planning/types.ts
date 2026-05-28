@@ -2,6 +2,7 @@ import type { EditBriefSettings } from "../edit-briefs/types";
 import type { ProductAnalyticsSink } from "../analytics/types";
 import type { ApiErrorDetail } from "../api-response";
 import type { ActiveEditBriefRepository } from "../render-jobs/types";
+import type { TranscriptRepository } from "../transcripts/types";
 
 export const EDIT_DECISION_LIST_SCHEMA_VERSION = "content_ops.edit_decision_list.v1";
 
@@ -19,6 +20,14 @@ export interface ClipCandidateInput {
   transcriptText: string;
   baseScore: number;
 }
+
+export type ContentProfile =
+  | "product_demo"
+  | "tutorial"
+  | "podcast"
+  | "gaming"
+  | "fitness"
+  | "general";
 
 export interface TranscriptSegmentInput {
   startMs: number;
@@ -48,6 +57,7 @@ export interface CreateEditDecisionListBody {
   editBrief?: EditPlanningBriefReference;
   candidates?: ClipCandidateInput[];
   transcriptSegments?: TranscriptSegmentInput[];
+  useStoredTranscript?: true;
 }
 
 export interface EditDecisionList {
@@ -59,6 +69,7 @@ export interface EditDecisionList {
   editBriefId: string;
   editBriefVersionId: string;
   editBriefVersionNumber: number;
+  contentProfile: ContentProfile;
   idempotencyKey: string;
   decisions: EditDecision[];
 }
@@ -95,6 +106,7 @@ export interface EditDecisionListRepository {
 export interface CreateEditDecisionListDependencies {
   editDecisionListRepository: EditDecisionListRepository;
   activeEditBriefRepository?: ActiveEditBriefRepository;
+  transcriptRepository?: TranscriptRepository;
   analyticsSink?: ProductAnalyticsSink;
   now?: () => Date;
 }

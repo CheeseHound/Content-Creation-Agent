@@ -1,4 +1,5 @@
 import type { HyperframesWorkerRuntime } from "./render-worker-types";
+import type { WorkerAnalyticsSinkConfig } from "./analytics-sinks";
 
 export type WorkerRenderMode = "mock" | "real";
 export type WorkerStorageMode = "local" | "s3";
@@ -11,6 +12,7 @@ export interface WorkerConfig {
   renderMode: WorkerRenderMode;
   storage: WorkerStorageConfig;
   runtime: HyperframesWorkerRuntime;
+  productAnalytics: WorkerAnalyticsSinkConfig;
 }
 
 export type WorkerStorageConfig =
@@ -36,11 +38,32 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     concurrency: parsePositiveInteger(env.WORKER_CONCURRENCY ?? "1", "WORKER_CONCURRENCY"),
     renderMode: parseRenderMode(env.CONTENT_OPS_WORKER_MODE ?? "mock"),
     storage: parseStorageConfig(env),
+    productAnalytics: parseProductAnalyticsConfig(env),
     runtime: {
       chromeExecutablePath:
         env.CHROME_EXECUTABLE_PATH ?? env.PUPPETEER_EXECUTABLE_PATH ?? "/usr/bin/chromium",
       ffmpegPath: env.FFMPEG_PATH ?? "/usr/bin/ffmpeg",
       hyperframesCommand: env.HYPERFRAMES_COMMAND ?? "npx hyperframes",
+    },
+  };
+}
+
+function parseProductAnalyticsConfig(env: NodeJS.ProcessEnv): WorkerAnalyticsSinkConfig {
+  const sink = env.PRODUCT_ANALYTICS_SINK ?? "none";
+
+  if (sink === "none") {
+    return { sink: "none" };
+  }
+
+  if (sink !== "posthog") {
+    throw new Error("PRODUCT_ANALYTICS_SINK must be either none or posthog");
+  }
+
+  return {
+    sink: "posthog",
+    postHog: {
+      apiKey: requiredEnv(env, "POSTHOG_API_KEY"),
+      host: parseOptionalHttpUrl(env.POSTHOG_HOST, "POSTHOG_HOST") ?? "https://app.posthog.com",
     },
   };
 }

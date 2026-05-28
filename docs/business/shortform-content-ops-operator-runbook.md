@@ -43,6 +43,7 @@ The summary includes aggregate counts only:
 
 - workspace count by subscription tier
 - upload count and total uploaded bytes
+- transcript count and transcript segment count
 - edit brief and edit brief version counts
 - edit decision list count
 - render job counts by status
@@ -65,6 +66,7 @@ The product analytics contract currently reserves these funnel events:
 
 - `upload_presigned`
 - `source_uploaded`
+- `source_transcribed`
 - `edit_brief_created`
 - `decision_list_created`
 - `render_job_created`
@@ -80,8 +82,8 @@ token/password/secret, storage key, and raw media-shaped fields before events
 reach a sink.
 
 Set `PRODUCT_ANALYTICS_SINK=posthog` to enable the PostHog-compatible
-production sink. `POSTHOG_API_KEY` is required in that mode, and `POSTHOG_HOST`
-defaults to `https://app.posthog.com` when omitted. Leave
+production sink in the API or worker process. `POSTHOG_API_KEY` is required in
+that mode, and `POSTHOG_HOST` defaults to `https://app.posthog.com` when omitted. Leave
 `PRODUCT_ANALYTICS_SINK` unset or set to `none` to use the no-op sink.
 
 ## Where Operators Look

@@ -32,6 +32,9 @@ describe("worker config", () => {
       ffmpegPath: "/usr/bin/ffmpeg",
       hyperframesCommand: "npx hyperframes",
     });
+    assert.deepEqual(config.productAnalytics, {
+      sink: "none",
+    });
   });
 
   it("reports missing secrets by name without echoing configured values", () => {
@@ -93,6 +96,24 @@ describe("worker config", () => {
       accessKeyId: "local-access-key",
       secretAccessKey: "local-secret-key",
       forcePathStyle: true,
+    });
+  });
+
+  it("parses PostHog product analytics settings without echoing secrets", () => {
+    const config = loadWorkerConfig({
+      DATABASE_URL: "postgres://user:pass@localhost:5432/content_ops",
+      REDIS_URL: "redis://localhost:6379",
+      PRODUCT_ANALYTICS_SINK: "posthog",
+      POSTHOG_API_KEY: "fixture-redacted-value",
+      POSTHOG_HOST: "https://us.posthog.com",
+    });
+
+    assert.deepEqual(config.productAnalytics, {
+      sink: "posthog",
+      postHog: {
+        apiKey: "fixture-redacted-value",
+        host: "https://us.posthog.com",
+      },
     });
   });
 

@@ -5,13 +5,15 @@ import {
   type BuildEditDecisionListInput,
   type BuildTranscriptClipCandidatesInput,
   type ClipCandidateInput,
+  type ContentProfile,
   type EditDecision,
   type EditDecisionList,
 } from "./types";
 
 export function buildEditDecisionList(input: BuildEditDecisionListInput): EditDecisionList {
+  const contentProfile = detectContentProfile(input);
   const scoredDecisions = input.candidates.map((candidate) =>
-    scoreCandidate(candidate, input.editBrief.settings),
+    scoreCandidate(candidate, input.editBrief.settings, contentProfile),
   );
   const rankedDecisions = rankIncludedDecisions(scoredDecisions);
   const idempotencyKey = buildEditDecisionListIdempotencyKey(input, rankedDecisions);
@@ -26,6 +28,7 @@ export function buildEditDecisionList(input: BuildEditDecisionListInput): EditDe
     editBriefId: input.editBrief.id,
     editBriefVersionId: input.editBrief.versionId,
     editBriefVersionNumber: input.editBrief.versionNumber,
+    contentProfile,
     idempotencyKey,
     decisions: rankedDecisions,
   };
@@ -52,6 +55,7 @@ export function buildTranscriptClipCandidates(
 function scoreCandidate(
   candidate: ClipCandidateInput,
   settings: BuildEditDecisionListInput["editBrief"]["settings"],
+  contentProfile: ContentProfile,
 ): EditDecision {
   const transcript = candidate.transcriptText.toLowerCase();
   const includeMatches = settings.include.filter((moment) =>
@@ -66,10 +70,12 @@ function scoreCandidate(
     durationSeconds <= settings.clipLengthSeconds.max
   );
   const pacingHint = buildPacingHint(settings.pacing, durationSeconds);
+  const profileHint = buildContentProfileHint(contentProfile, transcript);
   const score = candidate.baseScore +
     includeMatches.length * 20 +
     (lengthFits ? 5 : -10) +
-    pacingHint.scoreDelta -
+    pacingHint.scoreDelta +
+    profileHint.scoreDelta -
     excludeMatches.length * 100;
 
   return {
@@ -85,8 +91,97 @@ function scoreCandidate(
         ? `Fits requested ${settings.clipLengthSeconds.min}-${settings.clipLengthSeconds.max} second clip length.`
         : `Outside requested ${settings.clipLengthSeconds.min}-${settings.clipLengthSeconds.max} second clip length.`,
       ...(pacingHint.reason ? [pacingHint.reason] : []),
+      ...(profileHint.reason ? [profileHint.reason] : []),
     ],
   };
+}
+
+function detectContentProfile(input: BuildEditDecisionListInput): ContentProfile {
+  const haystack = [
+    input.editBrief.settings.goal,
+    input.editBrief.settings.tone,
+    input.editBrief.settings.cropStrategy,
+    ...input.editBrief.settings.editorialRules,
+    ...input.candidates.map((candidate) => candidate.transcriptText),
+  ].join(" ").toLowerCase();
+
+  const profileScores: Record<ContentProfile, number> = {
+    product_demo: countMatches(haystack, [
+      "dashboard",
+      "demo",
+      "feature",
+      "product",
+      "screen",
+      "software",
+      "workflow",
+    ]),
+    tutorial: countMatches(haystack, [
+      "guide",
+      "how",
+      "learn",
+      "step",
+      "tutorial",
+      "walkthrough",
+    ]),
+    podcast: countMatches(haystack, [
+      "conversation",
+      "episode",
+      "guest",
+      "interview",
+      "podcast",
+      "talking head",
+    ]),
+    gaming: countMatches(haystack, [
+      "boss",
+      "clutch",
+      "game",
+      "gaming",
+      "match",
+      "stream",
+    ]),
+    fitness: countMatches(haystack, [
+      "fitness",
+      "form",
+      "health",
+      "reps",
+      "routine",
+      "workout",
+    ]),
+    general: 0,
+  };
+
+  const [profile, score] = Object.entries(profileScores)
+    .sort(([, leftScore], [, rightScore]) => rightScore - leftScore)[0] as [ContentProfile, number];
+
+  return score > 0 ? profile : "general";
+}
+
+function buildContentProfileHint(
+  contentProfile: ContentProfile,
+  transcript: string,
+): { scoreDelta: number; reason?: string } {
+  const profileSignals: Record<ContentProfile, readonly string[]> = {
+    product_demo: ["dashboard", "demo", "feature", "result", "workflow"],
+    tutorial: ["how", "step", "learn", "mistake", "why"],
+    podcast: ["story", "lesson", "question", "answer", "guest"],
+    gaming: ["clutch", "win", "fail", "boss", "match"],
+    fitness: ["form", "routine", "rep", "before", "after"],
+    general: [],
+  };
+  const matches = profileSignals[contentProfile].filter((signal) => transcript.includes(signal));
+
+  if (matches.length === 0) {
+    return { scoreDelta: 0 };
+  }
+
+  return {
+    scoreDelta: Math.min(12, matches.length * 4),
+    reason: `Matches ${contentProfile.replace("_", " ")} profile signals.`,
+  };
+}
+
+function countMatches(value: string, signals: readonly string[]): number {
+  return signals.filter((signal) => value.includes(signal)).length;
 }
 
 function rankIncludedDecisions(decisions: EditDecision[]): EditDecision[] {

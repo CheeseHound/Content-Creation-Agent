@@ -80,6 +80,7 @@ describe("buildEditDecisionList", () => {
     assert.equal(decisionList.schemaVersion, "content_ops.edit_decision_list.v1");
     assert.equal(decisionList.editBriefId, EDIT_BRIEF.id);
     assert.equal(decisionList.editBriefVersionId, EDIT_BRIEF.versionId);
+    assert.equal(decisionList.contentProfile, "product_demo");
     assert.deepEqual(
       decisionList.decisions.map((decision) => ({
         clipCandidateId: decision.clipCandidateId,
@@ -108,6 +109,7 @@ describe("buildEditDecisionList", () => {
       "Matches requested include moment: dashboard reveal.",
       "Fits requested 20-45 second clip length.",
       "Fast pacing favors a tight clip.",
+      "Matches product demo profile signals.",
     ]);
     assert.match(decisionList.idempotencyKey, /^edit-decision-list:workspace_123:project_456:asset_abc:/);
   });

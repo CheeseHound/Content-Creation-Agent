@@ -1,5 +1,6 @@
 import pg from "pg";
 
+import { createWorkerAnalyticsSink } from "./analytics-sinks";
 import {
   createBullMqRenderWorker,
   RENDER_JOB_QUEUE_NAME,
@@ -26,6 +27,7 @@ export async function startWorker(): Promise<{ close(): Promise<void> }> {
   });
   const repository = new PostgresRenderWorkerRepository(pool);
   const storage = createRenderStorage(config.storage);
+  const analyticsSink = createWorkerAnalyticsSink(config.productAnalytics);
   const runner = new CommandHyperframesRenderRunner();
   const worker = createBullMqRenderWorker({
     redisUrl: config.redisUrl,
@@ -37,6 +39,7 @@ export async function startWorker(): Promise<{ close(): Promise<void> }> {
           repository,
           runtime: config.runtime,
           workspaceRoot: config.workspaceRoot,
+          analyticsSink,
         });
       }
 
@@ -46,6 +49,7 @@ export async function startWorker(): Promise<{ close(): Promise<void> }> {
         workspaceRoot: config.workspaceRoot,
         storage,
         runner,
+        analyticsSink,
       });
     },
   });

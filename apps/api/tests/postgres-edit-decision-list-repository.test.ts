@@ -22,6 +22,7 @@ const DECISION_LIST_RECORD: EditDecisionListRecord = {
     editBriefId: "edit_brief_workspace_123_project_456_asset_abc",
     editBriefVersionId: "edit_brief_version_workspace_123_project_456_asset_abc_1",
     editBriefVersionNumber: 1,
+    contentProfile: "product_demo",
     idempotencyKey: "edit-decision-list:workspace_123:project_456:asset_abc:fixture",
     decisions: [{
       clipCandidateId: "candidate_1",

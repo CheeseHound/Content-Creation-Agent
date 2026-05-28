@@ -80,6 +80,13 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
   edit brief, accept validated clip candidates or transcript segments, derive
   deterministic clip candidates when needed, persist the decision list
   idempotently, and emit sanitized `decision_list_created` analytics.
+- The API now exposes `POST /api/transcripts` to persist
+  `content_ops.transcript.v1` transcript segments idempotently, emit sanitized
+  `source_transcribed` analytics, and let edit decision list creation derive
+  candidates from the latest stored source transcript.
+- Edit decision lists now include a narrow deterministic content profile
+  (`product_demo`, `tutorial`, `podcast`, `gaming`, `fitness`, or `general`)
+  and use that profile as an initial transcript-aware scoring signal.
 - Architecture decision: keep the custom state-machine and queue-worker design;
   do not use LangGraph or LangChain as the core orchestrator.
 - Production SaaS contract has been started in
@@ -128,6 +135,14 @@ Hyperframes is the composition/rendering layer, not the editing-quality brain.
   `dev-log/2026-05-28-output-download-analytics-progress.md`.
 - Latest five-unit session summary is saved at
   `dev-log/2026-05-28-five-unit-session-summary.md`.
+- Latest persisted transcript progress is saved at
+  `dev-log/2026-05-28-transcript-persistence-progress.md`.
+- Latest stored-transcript planning and content profile progress is saved at
+  `dev-log/2026-05-28-stored-transcript-content-profile-progress.md`.
+- Latest worker lifecycle analytics progress is saved at
+  `dev-log/2026-05-28-worker-lifecycle-analytics-progress.md`.
+- Latest ten-unit session summary is saved at
+  `dev-log/2026-05-28-ten-unit-session-summary.md`.
 - Local API-to-worker Hyperframes smoke results are saved at
   `dev-log/2026-05-25-hyperframes-api-worker-smoke-results.md`.
 - Backend API MVP has started under `apps/api` with a TypeScript render-job
@@ -356,7 +371,7 @@ Completed:
   connection check, migration state, table availability, approximate row
   counts for core tables.
 - Product analytics event contract for funnel tracking:
-  `upload_presigned`, `source_uploaded`, `edit_brief_created`,
+  `upload_presigned`, `source_uploaded`, `source_transcribed`, `edit_brief_created`,
   `decision_list_created`, `render_job_created`, `render_started`,
   `render_ready`, `render_failed`, `output_downloaded`, `checkout_started`,
   and `subscription_updated`.
@@ -367,12 +382,18 @@ Completed:
 - Existing API flows now emit sanitized product analytics events after
   successful work:
   - `upload_presigned` after media asset persistence.
+  - `source_transcribed` after transcript persistence.
   - `edit_brief_created` after edit brief version persistence.
   - `decision_list_created` after edit decision list persistence.
   - `render_job_created` after render job persistence and queue enqueue.
   - `output_downloaded` after ready render outputs are signed for download.
+- Worker flows now emit sanitized `render_started`, `render_ready`, and
+  `render_failed` lifecycle events through the worker analytics sink.
 - PostHog-compatible product analytics sink behind `PRODUCT_ANALYTICS_SINK`,
-  `POSTHOG_API_KEY`, and optional `POSTHOG_HOST` configuration.
+  `POSTHOG_API_KEY`, and optional `POSTHOG_HOST` configuration in both API and
+  worker runtime config.
+- Internal admin analytics summary now includes transcript count and transcript
+  segment count.
 - Internal admin analytics summary now includes storage output count and total
   output bytes from render job output manifests.
 - Worker render status updates now persist dedicated `render_started_at`,
@@ -400,9 +421,8 @@ Completed:
 
 Remaining:
 
-- Additional product analytics events from future worker/billing callbacks:
-  `source_uploaded`, `render_started`, `render_ready`, `render_failed`,
-  `checkout_started`, and `subscription_updated`.
+- Additional product analytics events from future upload/billing callbacks:
+  `source_uploaded`, `checkout_started`, and `subscription_updated`.
 - Slow-query and index guidance hooks where the Postgres provider exposes
   them.
 - Support-specific audited actions for any future signed storage URL access.
@@ -464,6 +484,9 @@ Build:
   media. Initial append-only versioning implemented.
 - Initial `edit_decision_lists` persistence table and API route for downstream
   clip planning output. `edit_constraints` remains pending.
+- Initial `transcripts` persistence table and API route for source transcript
+  segments, with stored-transcript decision list planning available when
+  callers set `useStoredTranscript`.
 - Initial planning flow that maps validated transcript segments or clip
   candidates plus active edit brief settings into deterministic
   include/exclude/ranking hints, then persists the resulting decision list.
@@ -476,10 +499,10 @@ Build:
 - Content profile contract for `vlog`, `gaming`, `stream_clip`, `tutorial`,
   `product_demo`, `podcast`, `talking_head`, `fitness`, `health`, and
   `news_commentary`.
-- Profile detection from transcript, source metadata, audio/scene signals, and
-  optional user override.
-- Profile-aware clip candidate scoring with reasons, hooks, titles, captions,
-  target platform fit, and retention risk notes.
+- Initial profile detection from transcript and edit brief signals. Source
+  metadata, audio/scene signals, and optional user override remain pending.
+- Initial profile-aware clip candidate scoring with reasons. Hooks, titles,
+  captions, target platform fit, and retention risk notes remain pending.
 - Dashboard suggestions for edits, overlays, pacing, clip splits, and content
   calendar opportunities.
 - Brand/profile settings for tone, caption style, logo, colors, preferred calls
@@ -598,10 +621,10 @@ Acceptance:
 ## Recommended Next Step
 
 Continue with content profile detection and richer clip scoring over persisted
-transcripts/candidates, then wire worker/billing callback analytics events and
-real alert delivery onto the Phase 4 surfaces. Keep the core orchestration
-custom with Postgres/BullMQ workers and do not introduce LangGraph or
-LangChain.
+transcripts/candidates by adding profile overrides plus visual/audio signals,
+then wire upload completion and billing callback analytics events and real
+alert delivery onto the Phase 4 surfaces. Keep the core orchestration custom
+with Postgres/BullMQ workers and do not introduce LangGraph or LangChain.
 
 Before coding, inspect `DEVLOGS.md`, `ROADMAP.md`, and the latest dated file in
 `dev-log/`.

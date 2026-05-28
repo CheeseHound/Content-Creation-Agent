@@ -22,6 +22,7 @@ describe("content ops database migration", () => {
       "subscriptions",
       "projects",
       "media_assets",
+      "transcripts",
       "edit_briefs",
       "edit_brief_versions",
       "edit_decision_lists",
@@ -36,6 +37,8 @@ describe("content ops database migration", () => {
     assert.match(sql, /render_jobs[\s\S]+render_started_at timestamptz/i);
     assert.match(sql, /render_jobs[\s\S]+render_completed_at timestamptz/i);
     assert.match(sql, /render_jobs[\s\S]+render_failed_at timestamptz/i);
+    assert.match(sql, /transcripts[\s\S]+idempotency_key text not null unique/i);
+    assert.match(sql, /transcripts[\s\S]+schema_version text not null check \(schema_version = 'content_ops.transcript.v1'\)/i);
     assert.match(sql, /edit_brief_versions[\s\S]+idempotency_key text not null unique/i);
     assert.match(sql, /edit_brief_versions[\s\S]+unique\s*\(\s*edit_brief_id\s*,\s*version_number\s*\)/i);
     assert.match(sql, /edit_decision_lists[\s\S]+idempotency_key text not null unique/i);

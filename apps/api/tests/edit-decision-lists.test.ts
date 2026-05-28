@@ -17,6 +17,7 @@ import type {
   EditPlanningBriefReference,
 } from "../src/edit-planning/types";
 import { createApiServer, createInMemoryDependencies } from "../src/server";
+import type { TranscriptRecord, TranscriptRepository } from "../src/transcripts/types";
 
 const EDIT_BRIEF: EditPlanningBriefReference = {
   id: "edit_brief_workspace_123_project_456_asset_abc",
@@ -203,6 +204,55 @@ describe("POST /api/edit-decision-lists", () => {
     assert.equal(repository.records.length, 0);
   });
 
+  it("builds a decision list from the latest stored transcript", async () => {
+    const repository = new RecordingEditDecisionListRepository();
+    const transcriptRepository = new StaticTranscriptRepository({
+      id: "transcript_fixture",
+      workspaceId: "workspace_123",
+      projectId: "project_456",
+      userId: "user_789",
+      sourceAssetId: "asset_abc",
+      schemaVersion: "content_ops.transcript.v1",
+      language: "en",
+      durationMs: 60_000,
+      idempotencyKey: "transcript:fixture",
+      segments: [{
+        startMs: 0,
+        endMs: 25_000,
+        text: "Here is the dashboard reveal and workflow result.",
+      }],
+    });
+    const handler = createEditDecisionListHandler({
+      editDecisionListRepository: repository,
+      activeEditBriefRepository: new StaticActiveEditBriefRepository(EDIT_BRIEF),
+      transcriptRepository,
+    });
+
+    const response = await handler({
+      body: {
+        workspaceId: "workspace_123",
+        projectId: "project_456",
+        userId: "user_789",
+        sourceAssetId: "asset_abc",
+        useStoredTranscript: true,
+      } satisfies CreateEditDecisionListBody,
+    });
+
+    assert.equal(response.status, 201);
+    assert.equal(response.body.success, true);
+    if (!response.body.success) {
+      assert.fail("Expected decision list creation to succeed.");
+    }
+    assert.equal(response.body.data.decisionList.contentProfile, "product_demo");
+    assert.equal(response.body.data.decisionList.decisions[0]?.clipCandidateId, "clip_candidate_asset_abc_1");
+    assert.deepEqual(transcriptRepository.requests, [{
+      workspaceId: "workspace_123",
+      projectId: "project_456",
+      sourceAssetId: "asset_abc",
+    }]);
+    assert.doesNotMatch(JSON.stringify(response.body), /Here is the dashboard reveal|transcriptText/i);
+  });
+
   it("wires the edit decision list endpoint into the API server", async () => {
     const server = createApiServer({
       ...createInMemoryDependencies(),
@@ -272,6 +322,21 @@ class RecordingAnalyticsSink implements ProductAnalyticsSink {
 
   async track(event: ProductAnalyticsEventPayload): Promise<void> {
     this.events = [...this.events, event];
+  }
+}
+
+class StaticTranscriptRepository implements TranscriptRepository {
+  requests: readonly unknown[] = [];
+
+  constructor(private readonly transcript: TranscriptRecord | undefined) {}
+
+  async createTranscript(record: TranscriptRecord): Promise<TranscriptRecord> {
+    return record;
+  }
+
+  async getLatestTranscript(request: unknown): Promise<TranscriptRecord | undefined> {
+    this.requests = [...this.requests, request];
+    return this.transcript;
   }
 }
 

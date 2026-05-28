@@ -23,6 +23,10 @@ export interface AdminAnalyticsSummary {
     count: number;
     totalBytes: number;
   };
+  transcripts: {
+    count: number;
+    segmentCount: number;
+  };
   editBriefs: {
     briefCount: number;
     versionCount: number;

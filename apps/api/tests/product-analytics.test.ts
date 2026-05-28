@@ -13,6 +13,7 @@ describe("product analytics event contract", () => {
     assert.deepEqual(PRODUCT_ANALYTICS_EVENTS, [
       "upload_presigned",
       "source_uploaded",
+      "source_transcribed",
       "edit_brief_created",
       "decision_list_created",
       "render_job_created",

@@ -8,6 +8,12 @@ import {
   type RenderOutputManifest,
   validateQueuePayload,
 } from "./payload";
+import {
+  trackWorkerRenderFailedBestEffort,
+  trackWorkerRenderReadyBestEffort,
+  trackWorkerRenderStartedBestEffort,
+  type WorkerAnalyticsSink,
+} from "./analytics";
 import type {
   HyperframesRenderResult,
   HyperframesWorkerRuntime,
@@ -68,6 +74,8 @@ export interface ProcessHyperframesRenderJobDependencies {
   workspaceRoot: string;
   runtime: HyperframesWorkerRuntime;
   schemaPath?: string;
+  analyticsSink?: WorkerAnalyticsSink;
+  now?: () => Date;
 }
 
 export async function processHyperframesRenderJob(
@@ -76,6 +84,7 @@ export async function processHyperframesRenderJob(
 ): Promise<HyperframesRenderResult> {
   let payload: QueueJobPayload | undefined;
   let workspaceManifestPath: string | undefined;
+  let renderJobId: string | undefined;
 
   try {
     payload = validateQueuePayload(rawPayload, dependencies.schemaPath);
@@ -86,6 +95,7 @@ export async function processHyperframesRenderJob(
     const claim = await dependencies.repository.markRendering(payload, {
       workspaceManifestPath,
     });
+    renderJobId = claim.renderJobId;
 
     if (claim.alreadyReady) {
       return {
@@ -94,6 +104,14 @@ export async function processHyperframesRenderJob(
         reason: "already_ready",
       };
     }
+
+    await trackWorkerRenderStartedBestEffort({
+      sink: dependencies.analyticsSink,
+      payload,
+      renderJobId: claim.renderJobId,
+      workerMode: "real",
+      occurredAt: dependencies.now?.() ?? new Date(),
+    });
 
     await mkdir(workspacePaths.compositionDirectory, { recursive: true });
     await mkdir(workspacePaths.sourceAssetsDirectory, { recursive: true });
@@ -124,6 +142,14 @@ export async function processHyperframesRenderJob(
     );
     assertNoSecretLikeFields(outputManifest, "output_manifest");
     await dependencies.repository.markReady(claim, outputManifest);
+    await trackWorkerRenderReadyBestEffort({
+      sink: dependencies.analyticsSink,
+      payload,
+      renderJobId: claim.renderJobId,
+      workerMode: "real",
+      outputManifest,
+      occurredAt: dependencies.now?.() ?? new Date(),
+    });
 
     return {
       status: "ready",
@@ -137,6 +163,14 @@ export async function processHyperframesRenderJob(
       await dependencies.repository.markFailed(payload, {
         code: "real_hyperframes_render_failed",
         message,
+      });
+      await trackWorkerRenderFailedBestEffort({
+        sink: dependencies.analyticsSink,
+        payload,
+        renderJobId,
+        workerMode: "real",
+        failureCode: "real_hyperframes_render_failed",
+        occurredAt: dependencies.now?.() ?? new Date(),
       });
     }
 

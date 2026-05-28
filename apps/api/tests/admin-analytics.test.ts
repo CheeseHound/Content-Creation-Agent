@@ -30,6 +30,10 @@ const SUMMARY: AdminAnalyticsSummary = {
     count: 3,
     totalBytes: 900_000_000,
   },
+  transcripts: {
+    count: 2,
+    segmentCount: 48,
+  },
   editBriefs: {
     briefCount: 2,
     versionCount: 5,

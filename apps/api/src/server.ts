@@ -44,6 +44,12 @@ import { DEFAULT_RENDER_QUEUE } from "./render-jobs/contract";
 import { PostgresRenderJobRepository } from "./render-jobs/postgres-repository";
 import { createGetRenderJobHandler, createRenderJobHandler } from "./render-jobs/route";
 import { createS3UploadSigner, type S3UploadSignerConfig } from "./storage/s3-upload-signer";
+import { PostgresTranscriptRepository } from "./transcripts/postgres-repository";
+import { createPersistTranscriptHandler } from "./transcripts/route";
+import type {
+  PersistTranscriptDependencies,
+  TranscriptRecord,
+} from "./transcripts/types";
 import { PostgresUploadRepository } from "./uploads/postgres-repository";
 import { createUploadPresignHandler } from "./uploads/route";
 import type {
@@ -69,6 +75,7 @@ export interface ApiServerDependencies
     CreateUploadPresignDependencies,
     CreateEditBriefDependencies,
     CreateEditDecisionListDependencies,
+    PersistTranscriptDependencies,
     AdminAnalyticsDependencies,
     ObservabilityDependencies {}
 
@@ -97,6 +104,7 @@ export function createApiServer(dependencies: ApiServerDependencies): http.Serve
   const uploadPresignHandler = createUploadPresignHandler(dependencies);
   const editBriefHandler = createEditBriefHandler(dependencies);
   const editDecisionListHandler = createEditDecisionListHandler(dependencies);
+  const persistTranscriptHandler = createPersistTranscriptHandler(dependencies);
   const adminAnalyticsSummaryHandler = createAdminAnalyticsSummaryHandler(dependencies);
   const healthzHandler = createHealthzHandler(dependencies);
   const readyzHandler = createReadyzHandler(dependencies);
@@ -144,6 +152,13 @@ export function createApiServer(dependencies: ApiServerDependencies): http.Serve
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/transcripts") {
+      const body = await readJsonBody(request);
+      const routeResponse = await persistTranscriptHandler({ body });
+      writeJson(response, routeResponse);
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/edit-decision-lists") {
       const body = await readJsonBody(request);
       const routeResponse = await editDecisionListHandler({ body });
@@ -181,6 +196,7 @@ export function createInMemoryDependencies(): ApiServerDependencies {
     signer: new InMemoryUploadSigner(),
     editBriefRepository: repository,
     editDecisionListRepository: repository,
+    transcriptRepository: repository,
   };
 }
 
@@ -225,6 +241,7 @@ export async function createPostgresDependencies({
 
   const editBriefRepository = new PostgresEditBriefRepository(client);
   const editDecisionListRepository = new PostgresEditDecisionListRepository(client);
+  const transcriptRepository = new PostgresTranscriptRepository(client);
   const observabilityRepository = new PostgresObservabilityRepository(client);
   const adminAnalyticsRepository = new PostgresAdminAnalyticsRepository(client);
 
@@ -243,6 +260,7 @@ export async function createPostgresDependencies({
     signer,
     editBriefRepository,
     editDecisionListRepository,
+    transcriptRepository,
     uploadTtlSeconds,
     outputDownloadTtlSeconds,
     async close(): Promise<void> {
@@ -296,6 +314,7 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
   private mediaAssetsById: ReadonlyMap<string, MediaAssetRecord> = new Map();
   private editBriefsById: ReadonlyMap<string, readonly EditBriefVersionRecord[]> = new Map();
   private editDecisionListsById: ReadonlyMap<string, EditDecisionListRecord> = new Map();
+  private transcriptsById: ReadonlyMap<string, TranscriptRecord> = new Map();
 
   async getWorkspaceSubscription(_workspaceId: string): Promise<WorkspaceSubscription> {
     return this.subscription;
@@ -328,6 +347,11 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
           name: "edit_briefs",
           status: "ok",
           approximateRowCount: this.editBriefsById.size,
+        },
+        {
+          name: "transcripts",
+          status: "ok",
+          approximateRowCount: this.transcriptsById.size,
         },
       ],
     };
@@ -364,6 +388,14 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
       uploads: {
         count: uploads.length,
         totalBytes: uploads.reduce((sum, asset) => sum + asset.sizeBytes, 0),
+      },
+      transcripts: {
+        count: [...this.transcriptsById.values()].filter((transcript) =>
+          !request.workspaceId || transcript.workspaceId === request.workspaceId,
+        ).length,
+        segmentCount: [...this.transcriptsById.values()]
+          .filter((transcript) => !request.workspaceId || transcript.workspaceId === request.workspaceId)
+          .reduce((sum, transcript) => sum + transcript.segments.length, 0),
       },
       editBriefs: {
         briefCount: this.editBriefsById.size,
@@ -481,6 +513,32 @@ class InMemoryRenderJobRepository implements RenderJobRepository {
       [record.id, record],
     ]);
     return record;
+  }
+
+  async createTranscript(record: TranscriptRecord): Promise<TranscriptRecord> {
+    const existing = [...this.transcriptsById.values()]
+      .find((transcript) => transcript.idempotencyKey === record.idempotencyKey);
+
+    if (existing) {
+      return existing;
+    }
+
+    this.transcriptsById = new Map([...this.transcriptsById.entries(), [record.id, record]]);
+    return record;
+  }
+
+  async getLatestTranscript(request: {
+    workspaceId: string;
+    projectId: string;
+    sourceAssetId: string;
+  }): Promise<TranscriptRecord | undefined> {
+    return [...this.transcriptsById.values()]
+      .filter((transcript) =>
+        transcript.workspaceId === request.workspaceId &&
+        transcript.projectId === request.projectId &&
+        transcript.sourceAssetId === request.sourceAssetId
+      )
+      .at(-1);
   }
 
   async getActiveEditBrief(request: {

@@ -9,6 +9,7 @@ export type AnalyticsProperties = Record<string, AnalyticsValue>;
 export type ProductAnalyticsEventName =
   | "upload_presigned"
   | "source_uploaded"
+  | "source_transcribed"
   | "edit_brief_created"
   | "decision_list_created"
   | "render_job_created"

@@ -7,6 +7,12 @@ import {
   type RenderOutputManifest,
   validateQueuePayload,
 } from "./payload";
+import {
+  trackWorkerRenderFailedBestEffort,
+  trackWorkerRenderReadyBestEffort,
+  trackWorkerRenderStartedBestEffort,
+  type WorkerAnalyticsSink,
+} from "./analytics";
 import type {
   HyperframesRenderResult,
   HyperframesWorkerRuntime,
@@ -29,6 +35,8 @@ export interface ProcessMockHyperframesRenderJobDependencies {
   workspaceRoot: string;
   runtime: HyperframesWorkerRuntime;
   schemaPath?: string;
+  analyticsSink?: WorkerAnalyticsSink;
+  now?: () => Date;
 }
 
 export type MockHyperframesRenderResult = HyperframesRenderResult;
@@ -47,6 +55,7 @@ export async function processMockHyperframesRenderJob(
 ): Promise<MockHyperframesRenderResult> {
   let payload: QueueJobPayload | undefined;
   let workspaceManifestPath: string | undefined;
+  let renderJobId: string | undefined;
 
   try {
     payload = validateQueuePayload(rawPayload, dependencies.schemaPath);
@@ -58,6 +67,7 @@ export async function processMockHyperframesRenderJob(
     const claim = await dependencies.repository.markRendering(payload, {
       workspaceManifestPath: workspacePaths.workspaceManifestPath,
     });
+    renderJobId = claim.renderJobId;
 
     if (claim.alreadyReady) {
       return {
@@ -66,6 +76,14 @@ export async function processMockHyperframesRenderJob(
         reason: "already_ready",
       };
     }
+
+    await trackWorkerRenderStartedBestEffort({
+      sink: dependencies.analyticsSink,
+      payload,
+      renderJobId: claim.renderJobId,
+      workerMode: "mock",
+      occurredAt: dependencies.now?.() ?? new Date(),
+    });
 
     const sourceAssets = await stageSourceAssetReferences(payload, workspacePaths);
     const manifest = buildWorkspaceManifest(payload, dependencies.runtime, sourceAssets);
@@ -78,7 +96,16 @@ export async function processMockHyperframesRenderJob(
       "utf8",
     );
 
-    await dependencies.repository.markReady(claim, { outputs: [] });
+    const outputManifest: RenderOutputManifest = { outputs: [] };
+    await dependencies.repository.markReady(claim, outputManifest);
+    await trackWorkerRenderReadyBestEffort({
+      sink: dependencies.analyticsSink,
+      payload,
+      renderJobId: claim.renderJobId,
+      workerMode: "mock",
+      outputManifest,
+      occurredAt: dependencies.now?.() ?? new Date(),
+    });
 
     return {
       status: "ready",
@@ -92,6 +119,14 @@ export async function processMockHyperframesRenderJob(
       await dependencies.repository.markFailed(payload, {
         code: "mock_hyperframes_render_failed",
         message,
+      });
+      await trackWorkerRenderFailedBestEffort({
+        sink: dependencies.analyticsSink,
+        payload,
+        renderJobId,
+        workerMode: "mock",
+        failureCode: "mock_hyperframes_render_failed",
+        occurredAt: dependencies.now?.() ?? new Date(),
       });
     }
 

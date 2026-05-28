@@ -13,6 +13,7 @@ describe("PostgresAdminAnalyticsRepository", () => {
         { tier: "studio", workspace_count: "1" },
       ],
       [{ upload_count: "5", total_bytes: "1200000000" }],
+      [{ transcript_count: "3", segment_count: "144" }],
       [{ brief_count: "4", version_count: "9" }],
       [{ decision_list_count: "6" }],
       [
@@ -63,6 +64,10 @@ describe("PostgresAdminAnalyticsRepository", () => {
       uploads: {
         count: 5,
         totalBytes: 1_200_000_000,
+      },
+      transcripts: {
+        count: 3,
+        segmentCount: 144,
       },
       editBriefs: {
         briefCount: 4,
@@ -121,15 +126,16 @@ describe("PostgresAdminAnalyticsRepository", () => {
         totalOutputBytes: 456_000_000,
       },
     });
-    assert.equal(client.queries.length, 12);
+    assert.equal(client.queries.length, 13);
     for (const query of client.queries) {
       assert.deepEqual(query.values, ["workspace_123", start, end]);
       assert.doesNotMatch(query.text, /select \*/i);
     }
     assert.doesNotMatch(JSON.stringify(summary), /source_key|storage_key|payload|secret|password/i);
-    assert.match(client.queries[6]?.text ?? "", /render_started_at - created_at/);
-    assert.match(client.queries[7]?.text ?? "", /render_completed_at - render_started_at/);
-    assert.match(client.queries[10]?.text ?? "", /ledger_by_job/);
+    assert.match(client.queries[3]?.text ?? "", /from transcripts/);
+    assert.match(client.queries[7]?.text ?? "", /render_started_at - created_at/);
+    assert.match(client.queries[8]?.text ?? "", /render_completed_at - render_started_at/);
+    assert.match(client.queries[11]?.text ?? "", /ledger_by_job/);
     assert.match(client.queries.at(-1)?.text ?? "", /jsonb_array_elements/);
   });
 });

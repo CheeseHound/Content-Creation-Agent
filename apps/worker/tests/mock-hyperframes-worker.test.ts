@@ -9,18 +9,22 @@ import {
   type RenderWorkerClaim,
   type RenderWorkerRepository,
 } from "../src/mock-hyperframes-worker";
+import type { WorkerAnalyticsEventPayload, WorkerAnalyticsSink } from "../src/analytics";
 import type { QueueJobPayload, RenderOutputManifest } from "../src/payload";
 
 describe("mock Hyperframes render worker", () => {
   it("stages source asset references and writes a scoped render workspace manifest", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "content-ops-worker-"));
     const repository = new InMemoryWorkerRepository();
+    const analyticsSink = new RecordingWorkerAnalyticsSink();
 
     try {
       const result = await processMockHyperframesRenderJob(QUEUE_PAYLOAD, {
         repository,
         workspaceRoot,
         runtime: RUNTIME_BOUNDARY,
+        analyticsSink,
+        now: () => new Date("2026-05-28T07:00:00.000Z"),
       });
 
       assert.equal(result.status, "ready");
@@ -42,6 +46,26 @@ describe("mock Hyperframes render worker", () => {
       assert.equal(manifest.sourceAssets[0]?.storageKey, QUEUE_PAYLOAD.storage.source_key);
       assertPathInside(workspaceRoot, manifest.sourceAssets[0]?.localReferencePath ?? "");
       assert.equal(repository.readyManifest?.outputs.length, 0);
+      assert.deepEqual(analyticsSink.events.map((event) => event.eventName), [
+        "render_started",
+        "render_ready",
+      ]);
+      assert.deepEqual(analyticsSink.events[0], {
+        eventName: "render_started",
+        workspaceId: "workspace_123",
+        projectId: "project_456",
+        userId: "user_789",
+        sourceAssetId: "asset_abc",
+        renderJobId: "render_job_fixture",
+        occurredAt: "2026-05-28T07:00:00.000Z",
+        properties: {
+          workerMode: "mock",
+          estimatedMinutes: 16,
+          clipCount: 4,
+          templateVariant: "bold-captions",
+        },
+      });
+      assert.doesNotMatch(JSON.stringify(analyticsSink.events), /storage_key|storageKey|source\.mov|secret/i);
     } finally {
       await rm(workspaceRoot, { recursive: true, force: true });
     }
@@ -235,6 +259,14 @@ class InMemoryWorkerRepository implements RenderWorkerRepository {
     this.status = "failed";
     this.failureMessage = failure.message;
     this.transitions = [...this.transitions, "failed"];
+  }
+}
+
+class RecordingWorkerAnalyticsSink implements WorkerAnalyticsSink {
+  events: readonly WorkerAnalyticsEventPayload[] = [];
+
+  async track(event: WorkerAnalyticsEventPayload): Promise<void> {
+    this.events = [...this.events, event];
   }
 }
 

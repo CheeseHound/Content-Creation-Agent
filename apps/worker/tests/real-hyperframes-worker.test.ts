@@ -11,6 +11,7 @@ import {
   type RenderWorkerClaim,
   type RenderWorkerRepository,
 } from "../src/hyperframes-worker";
+import type { WorkerAnalyticsEventPayload, WorkerAnalyticsSink } from "../src/analytics";
 import { LocalFilesystemRenderStorage } from "../src/render-storage";
 import type { QueueJobPayload, RenderOutputManifest } from "../src/payload";
 
@@ -80,6 +81,7 @@ describe("real Hyperframes render worker slice", () => {
     const sourcePath = join(storageRoot, QUEUE_PAYLOAD.storage.source_key);
     const repository = new InMemoryWorkerRepository();
     const runner = new FixtureRenderRunner();
+    const analyticsSink = new RecordingWorkerAnalyticsSink();
 
     try {
       await mkdir(dirname(sourcePath), { recursive: true });
@@ -91,6 +93,8 @@ describe("real Hyperframes render worker slice", () => {
         runner,
         runtime: RUNTIME_BOUNDARY,
         workspaceRoot,
+        analyticsSink,
+        now: () => new Date("2026-05-28T07:30:00.000Z"),
       });
 
       assert.equal(result.status, "ready");
@@ -129,6 +133,17 @@ describe("real Hyperframes render worker slice", () => {
       assert.equal(manifest.output.renderOutputPrefix, QUEUE_PAYLOAD.storage.render_output_prefix);
       assert.equal(manifest.sourceAssets[0]?.storageKey, QUEUE_PAYLOAD.storage.source_key);
       assertPathInside(workspaceRoot, manifest.sourceAssets[0]?.localPath ?? "");
+      assert.deepEqual(analyticsSink.events.map((event) => event.eventName), [
+        "render_started",
+        "render_ready",
+      ]);
+      assert.equal(analyticsSink.events[1]?.renderJobId, "render_job_fixture");
+      assert.deepEqual(analyticsSink.events[1]?.properties, {
+        workerMode: "real",
+        outputCount: 1,
+        totalOutputBytes: 20,
+      });
+      assert.doesNotMatch(JSON.stringify(analyticsSink.events), /storage_key|storageKey|source\.mov|secret/i);
     } finally {
       await rm(tempRoot, { recursive: true, force: true });
     }
@@ -142,6 +157,7 @@ describe("real Hyperframes render worker slice", () => {
     const repository = new InMemoryWorkerRepository();
     const runner = new FixtureRenderRunner();
     const storage = new FailingUploadStorage(storageRoot);
+    const analyticsSink = new RecordingWorkerAnalyticsSink();
 
     try {
       await mkdir(dirname(sourcePath), { recursive: true });
@@ -153,12 +169,20 @@ describe("real Hyperframes render worker slice", () => {
         runner,
         runtime: RUNTIME_BOUNDARY,
         workspaceRoot,
+        analyticsSink,
+        now: () => new Date("2026-05-28T07:45:00.000Z"),
       });
 
       assert.equal(result.status, "failure");
       assert.deepEqual(repository.transitions, ["rendering", "failed"]);
       assert.equal(repository.readyManifest, undefined);
       assert.match(repository.failureMessage ?? "", /real render worker failed/);
+      assert.deepEqual(analyticsSink.events.map((event) => event.eventName), [
+        "render_started",
+        "render_failed",
+      ]);
+      assert.equal(analyticsSink.events[1]?.properties.failureCode, "real_hyperframes_render_failed");
+      assert.doesNotMatch(JSON.stringify(analyticsSink.events), /secret-value-that-must-not-leak|storageKey|source\.mov/i);
     } finally {
       await rm(tempRoot, { recursive: true, force: true });
     }
@@ -304,6 +328,14 @@ class InMemoryWorkerRepository implements RenderWorkerRepository {
 class FailingUploadStorage extends LocalFilesystemRenderStorage {
   async uploadObject(): Promise<never> {
     throw new Error("fixture upload failure with secret-value-that-must-not-leak");
+  }
+}
+
+class RecordingWorkerAnalyticsSink implements WorkerAnalyticsSink {
+  events: readonly WorkerAnalyticsEventPayload[] = [];
+
+  async track(event: WorkerAnalyticsEventPayload): Promise<void> {
+    this.events = [...this.events, event];
   }
 }
 

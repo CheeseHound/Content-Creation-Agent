@@ -26,12 +26,19 @@ export class EditDecisionListInputError extends Error {
   }
 }
 
+export class EditDecisionListMissingTranscriptError extends Error {
+  constructor() {
+    super("No stored transcript exists for this source asset.");
+    this.name = "EditDecisionListMissingTranscriptError";
+  }
+}
+
 export async function createEditDecisionList(
   request: CreateEditDecisionListBody,
   dependencies: CreateEditDecisionListDependencies,
 ): Promise<CreateEditDecisionListResult> {
   const editBrief = await resolveEditBrief(request, dependencies);
-  const candidates = resolveCandidates(request);
+  const candidates = await resolveCandidates(request, dependencies);
   const decisionList = buildEditDecisionList({
     workspaceId: request.workspaceId,
     projectId: request.projectId,
@@ -65,7 +72,12 @@ export async function createEditDecisionList(
       decisionCount: persisted.decisionList.decisions.length,
       excludedCount: persisted.decisionList.decisions
         .filter((decision) => decision.excluded).length,
-      inputSource: request.candidates ? "candidates" : "transcript_segments",
+      contentProfile: persisted.decisionList.contentProfile,
+      inputSource: request.candidates
+        ? "candidates"
+        : request.transcriptSegments
+          ? "transcript_segments"
+          : "stored_transcript",
       rankedCount: persisted.decisionList.decisions
         .filter((decision) => decision.rank !== undefined).length,
     },
@@ -102,19 +114,45 @@ async function resolveEditBrief(
   };
 }
 
-function resolveCandidates(request: CreateEditDecisionListBody): ClipCandidateInput[] {
-  const candidates = request.candidates ?? (
-    request.transcriptSegments
+async function resolveCandidates(
+  request: CreateEditDecisionListBody,
+  dependencies: CreateEditDecisionListDependencies,
+): Promise<ClipCandidateInput[]> {
+  const candidates = request.candidates ??
+    (request.transcriptSegments
       ? buildTranscriptClipCandidates({
         sourceAssetId: request.sourceAssetId,
         segments: request.transcriptSegments,
       })
-      : []
-  );
+      : await buildStoredTranscriptCandidates(request, dependencies));
 
   if (candidates.length === 0) {
     throw new EditDecisionListInputError("At least one clip candidate is required.");
   }
 
   return candidates;
+}
+
+async function buildStoredTranscriptCandidates(
+  request: CreateEditDecisionListBody,
+  dependencies: CreateEditDecisionListDependencies,
+): Promise<ClipCandidateInput[]> {
+  if (!request.useStoredTranscript) {
+    return [];
+  }
+
+  const transcript = await dependencies.transcriptRepository?.getLatestTranscript({
+    workspaceId: request.workspaceId,
+    projectId: request.projectId,
+    sourceAssetId: request.sourceAssetId,
+  });
+
+  if (!transcript) {
+    throw new EditDecisionListMissingTranscriptError();
+  }
+
+  return buildTranscriptClipCandidates({
+    sourceAssetId: request.sourceAssetId,
+    segments: transcript.segments,
+  });
 }

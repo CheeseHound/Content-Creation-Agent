@@ -1,4 +1,5 @@
 import type { QueueJobPayload, RenderOutputManifest } from "./payload";
+import type { WorkerAnalyticsSink } from "./analytics";
 
 export interface HyperframesWorkerRuntime {
   chromeExecutablePath: string;
@@ -21,6 +22,11 @@ export interface RenderWorkerRepository {
     payload: QueueJobPayload,
     failure: { code: string; message: string },
   ): Promise<void>;
+}
+
+export interface RenderWorkerAnalyticsDependencies {
+  analyticsSink?: WorkerAnalyticsSink;
+  now?: () => Date;
 }
 
 export type HyperframesRenderResult =

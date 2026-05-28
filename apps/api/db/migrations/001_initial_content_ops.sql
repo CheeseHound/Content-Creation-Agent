@@ -66,6 +66,23 @@ create table if not exists media_assets (
 create index if not exists media_assets_project_idx
   on media_assets (project_id);
 
+create table if not exists transcripts (
+  id text primary key,
+  workspace_id text not null references workspaces(id) on delete cascade,
+  project_id text not null references projects(id) on delete cascade,
+  user_id text not null references users(id),
+  source_asset_id text not null references media_assets(id) on delete cascade,
+  schema_version text not null check (schema_version = 'content_ops.transcript.v1'),
+  language text,
+  duration_ms integer check (duration_ms is null or duration_ms > 0),
+  segments jsonb not null,
+  idempotency_key text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists transcripts_source_created_idx
+  on transcripts (workspace_id, project_id, source_asset_id, created_at desc);
+
 create table if not exists edit_briefs (
   id text primary key,
   workspace_id text not null references workspaces(id) on delete cascade,

@@ -3,6 +3,7 @@ import {
   createEditDecisionList,
   EditDecisionListInputError,
   EditDecisionListMissingBriefError,
+  EditDecisionListMissingTranscriptError,
 } from "./service";
 import type {
   CreateEditDecisionListDependencies,
@@ -39,6 +40,10 @@ export function createEditDecisionListHandler(
     } catch (error) {
       if (error instanceof EditDecisionListMissingBriefError) {
         return apiError(409, "active_edit_brief_required", error.message);
+      }
+
+      if (error instanceof EditDecisionListMissingTranscriptError) {
+        return apiError(409, "stored_transcript_required", error.message);
       }
 
       if (error instanceof EditDecisionListInputError) {
